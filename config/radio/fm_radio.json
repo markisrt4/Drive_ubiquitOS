@@ -3,14 +3,14 @@
   "label": "FM Radio",
   "description": "Broadcast FM radio presets",
   "launch": {
-    "label": "Launch SDR++",
-    "subtitle": "FM receiver app",
-    "detail": "Starts / toggles SDR++"
+    "label": "Launch",
+    "subtitle": "SDR++ FM",
+    "detail": "Toggles FM Receiver"
   },
   "radio": {
-    "label": "Radio ON/OFF",
-    "subtitle": "Radio control",
-    "detail": "Start / stop receiver"
+    "label": "Power",
+    "subtitle": "Radio",
+    "detail": "ON/OFF"
   },
   "default_mode": {
     "name": "WFM",

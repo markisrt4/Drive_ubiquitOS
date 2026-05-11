@@ -3,14 +3,14 @@
   "label": "Airband AM",
   "description": "Aircraft voice radio presets",
   "launch": {
-    "label": "Launch SDR++",
-    "subtitle": "Airband receiver app",
-    "detail": "Starts / toggles SDR++"
+    "label": "Launch",
+    "subtitle": "SDR++ Airband",
+    "detail": "Toggles AM Receiver"
   },
   "radio": {
-    "label": "Radio ON/OFF",
-    "subtitle": "Radio control",
-    "detail": "Start / stop receiver"
+    "label": "Power",
+    "subtitle": "Radio",
+    "detail": "ON/OFF"
   },
   "default_mode": {
     "name": "AM",

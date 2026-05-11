@@ -1,11 +1,14 @@
 import subprocess
+import sys
 from pathlib import Path
 from typing import Callable, Optional
 
 from apps.launchers.app_launcher_if import AppLauncherIf
 from apps.launchers.browser_launcher import BrowserKioskLauncher
-from apps.launchers.process_manager import is_process_running, kill_process_pattern
-
+from apps.launchers.process_manager import (
+    close_matching_display_apps,
+    is_process_running,
+)
 
 class StreamlitLauncher(AppLauncherIf):
     def __init__(
@@ -41,6 +44,8 @@ class StreamlitLauncher(AppLauncherIf):
         if not self.is_running():
             subprocess.Popen(
                 [
+                    sys.executable,
+                    "-m",
                     "streamlit",
                     "run",
                     str(self.app_path),
@@ -64,17 +69,32 @@ class StreamlitLauncher(AppLauncherIf):
         if set_status:
             set_status(f"Streamlit dashboard launched on {remote_display}")
 
-    def stop(self, set_status=None) -> None:
-        kill_process_pattern(self.process_pattern)
+    def stop(
+        self,
+        set_status: Optional[Callable[[str], None]] = None,
+    ) -> None:
+
+        close_matching_display_apps(
+            display=remote_display,
+            patterns=[
+                "streamlit",
+            ],
+        )
+
         self.browser.stop(set_status=None)
 
         if set_status:
             set_status("Streamlit dashboard stopped")
 
-    def toggle(self, remote_display=":2", set_status=None) -> bool:
+    def toggle(
+        self,
+        remote_display: str = ":2",
+        set_status: Optional[Callable[[str], None]] = None,
+    ) -> bool:
         if self.is_running() or self.browser.is_running():
             self.stop(set_status=set_status)
             return False
 
         self.launch(remote_display=remote_display, set_status=set_status)
         return True
+

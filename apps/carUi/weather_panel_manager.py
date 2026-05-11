@@ -1,7 +1,11 @@
 from apps.carUi.panel_manager_if import PanelManagerIf
 from apps.carUi.weatherPanel import WeatherPanel
-from apps.carUi.radio_panel_manager import (
+
+from apps.carUi.radio.radio_panel_manager import (
     RadioPanelManager,
+)
+
+from apps.carUi.radio.radio_panel_config import (
     RadioPanelConfig,
     RadioPanelTileConfig,
 )

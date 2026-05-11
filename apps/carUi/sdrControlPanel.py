@@ -9,11 +9,15 @@ from apps.carUi.ham_radio_panel_manager import HamRadioPanelManager
 from apps.carUi.weather_panel_manager import WeatherPanelManager
 from apps.carUi.fm_radio_panel_manager import FMRadioPanelManager
 
-from apps.carUi.radio_panel_manager import (
+from apps.carUi.radio.radio_panel_manager import (
     RadioPanelManager,
+)
+
+from apps.carUi.radio.radio_panel_config import (
     RadioPanelConfig,
     RadioPanelTileConfig,
 )
+
 from .uiTheme import COLORS, FONTS  # <- theme integrated
 
 from apps.launchers.process_manager import close_display_apps
@@ -219,6 +223,24 @@ class SDRControlPanel(tk.Tk):
         subtitle: str,
         detail: str,
     ) -> tk.Frame:
+        small = self.winfo_screenwidth() <= 1024 or self.winfo_screenheight() <= 600
+        is_preset = "_preset_" in spec.key or spec.key.startswith(("fm_", "ham_", "airband_", "weather_radio_"))
+
+        if small:
+            title_font = ("Arial", 18 if not is_preset else 20, "bold")
+            subtitle_font = ("Arial", 10)
+            detail_font = ("Arial", 9)
+            body_padx = 10
+            body_pady = 6
+            top_accent_height = 4
+        else:
+            title_font = FONTS["tile_title"]
+            subtitle_font = FONTS["tile_subtitle"]
+            detail_font = FONTS["tile_detail"]
+            body_padx = 22
+            body_pady = 18
+            top_accent_height = 5
+
         tile = tk.Frame(
             parent,
             bg=COLORS["tile_bg"],
@@ -229,42 +251,48 @@ class SDRControlPanel(tk.Tk):
             cursor="hand2",
         )
 
-        accent = tk.Frame(tile, bg=COLORS["tile_accent"], height=5)
+        accent = tk.Frame(tile, bg=COLORS["tile_accent"], height=top_accent_height)
         accent.pack(fill="x", side="top")
 
         body = tk.Frame(tile, bg=COLORS["tile_bg"])
-        body.pack(fill="both", expand=True, padx=22, pady=10)
+        body.pack(fill="both", expand=True, padx=body_padx, pady=body_pady)
 
         title = tk.Label(
             body,
             text=spec.label,
-            font=FONTS["tile_title"],
+            font=title_font,
             bg=COLORS["tile_bg"],
             fg=COLORS["tile_title"],
-            anchor="w",
+            anchor="center" if is_preset else "w",
+            justify="center" if is_preset else "left",
+            wraplength=180 if small else 260,
         )
-        title.pack(fill="x", anchor="w")
+        title.pack(fill="x", anchor="center" if is_preset else "w")
 
-        subtitle_label = tk.Label(
-            body,
-            text=subtitle,
-            font=FONTS["tile_subtitle"],
-            bg=COLORS["tile_bg"],
-            fg=COLORS["tile_subtitle"],
-            anchor="w",
-        )
+        if not is_preset:
+            subtitle_label = tk.Label(
+                body,
+                text=subtitle,
+                font=subtitle_font,
+                bg=COLORS["tile_bg"],
+                fg=COLORS["tile_subtitle"],
+                anchor="w",
+                justify="left",
+                wraplength=220 if small else 300,
+            )
+            subtitle_label.pack(fill="x", anchor="w", pady=(4, 0))
 
-        subtitle_label.pack(fill="x", anchor="w", pady=(4, 0))
-
-        detail_label = tk.Label(
-            body,
-            text=detail,
-            font=FONTS["tile_detail"],
-            bg=COLORS["tile_bg"],
-            fg=COLORS["tile_detail"],
-            anchor="w",
-        )
-        detail_label.pack(fill="x", anchor="w", pady=(8, 0))
+            detail_label = tk.Label(
+                body,
+                text=detail,
+                font=detail_font,
+                bg=COLORS["tile_bg"],
+                fg=COLORS["tile_detail"],
+                anchor="w",
+                justify="left",
+                wraplength=220 if small else 300,
+            )
+            detail_label.pack(fill="x", anchor="w", pady=(6, 0))
 
         self._bind_click_recursive(tile, spec)
         return tile

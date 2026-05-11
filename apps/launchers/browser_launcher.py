@@ -1,10 +1,13 @@
 import os
+import shutil
 import subprocess
 from typing import Callable, Optional
 
 from apps.launchers.app_launcher_if import AppLauncherIf
-from apps.launchers.process_manager import is_process_running, kill_process_pattern
-
+from apps.launchers.process_manager import (
+    close_matching_display_apps,
+    is_process_running,
+)
 
 class BrowserKioskLauncher(AppLauncherIf):
     def __init__(
@@ -17,6 +20,18 @@ class BrowserKioskLauncher(AppLauncherIf):
         self.process_pattern = process_pattern
         self.log_file = log_file
         self._process: Optional[subprocess.Popen] = None
+
+    def _find_browser(self) -> str:
+        browser = (
+            shutil.which("chromium-browser")
+            or shutil.which("chromium")
+            or shutil.which("google-chrome")
+        )
+
+        if not browser:
+            raise RuntimeError("Could not find chromium-browser, chromium, or google-chrome")
+
+        return browser
 
     def is_running(self) -> bool:
         if self._process is not None and self._process.poll() is None:
@@ -33,13 +48,15 @@ class BrowserKioskLauncher(AppLauncherIf):
                 set_status("Browser already running")
             return
 
+        browser_path = self._find_browser()
+
         env = os.environ.copy()
         env["DISPLAY"] = remote_display
         env["XDG_SESSION_TYPE"] = "x11"
         env["GDK_BACKEND"] = "x11"
 
         command = [
-            "chromium-browser",
+            browser_path,
             "--kiosk",
             "--noerrdialogs",
             "--disable-infobars",
@@ -65,7 +82,15 @@ class BrowserKioskLauncher(AppLauncherIf):
         self,
         set_status: Optional[Callable[[str], None]] = None,
     ) -> None:
-        kill_process_pattern(self.process_pattern)
+        
+        close_matching_display_apps(
+            display=remote_display,
+            patterns=[
+                "chromium-browser",
+                "chromium",
+                "google-chrome",
+            ],
+        )
         self._process = None
 
         if set_status:
@@ -82,3 +107,4 @@ class BrowserKioskLauncher(AppLauncherIf):
 
         self.launch(remote_display=remote_display, set_status=set_status)
         return True
+

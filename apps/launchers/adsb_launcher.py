@@ -5,11 +5,9 @@ from typing import Callable, Optional
 from apps.launchers.app_launcher_if import AppLauncherIf
 from apps.launchers.browser_launcher import BrowserKioskLauncher
 from apps.launchers.process_manager import (
+    close_matching_display_apps,
     is_process_running,
-    kill_process_pattern,
-    close_display_apps,
 )
-
 
 class ADSBLauncher(AppLauncherIf):
     def __init__(
@@ -49,8 +47,13 @@ class ADSBLauncher(AppLauncherIf):
                 set_status=set_status,
             )
 
-        kill_process_pattern("sdrpp")
-        kill_process_pattern("sdr\\+\\+")
+        close_matching_display_apps(
+            display=remote_display,
+            patterns=[
+                "sdrpp",
+                "sdr\\+\\+",
+            ],
+        )
         subprocess.run(["sudo", "systemctl", "start", "readsb"], check=False)
 
         self.browser.launch(
