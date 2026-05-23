@@ -286,8 +286,6 @@ class SDRControlPanel(tk.Tk):
         detail: str,
     ) -> tk.Frame:
         small = self.compact_ui
-        is_preset = "_preset_" in spec.key or spec.key.startswith(("fm_", "ham_", "airband_", "weather_radio_"))
-
         is_main_tile = spec.key in {
             "fm_radio",
             "weather",
@@ -296,6 +294,8 @@ class SDRControlPanel(tk.Tk):
             "lighting",
             "settings",
         }
+
+        is_preset = "_preset_" in spec.key and not is_main_tile
         
         if small:
             if is_main_tile:
