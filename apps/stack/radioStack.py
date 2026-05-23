@@ -86,6 +86,7 @@ def attach_radio_stacks(app) -> None:
     )
     app.airband_radio_launcher = SDRPPLauncher(AIRBAND_AM_PROFILE,
                                                resource_manager=app.sdr_resource_manager,
+                                               owner_name="sdrpp_airband",
     )
 
     app.weather_dash_launcher = WeatherDashLauncher()
@@ -106,6 +107,7 @@ def attach_radio_stacks(app) -> None:
     )
     app.weather_radio_launcher = SDRPPLauncher(WEATHER_NOAA_PROFILE,
                                                resource_manager=app.sdr_resource_manager,
+                                               owner_name="sdrpp_weather",
     )
     
     app.ham_radio_config = load_ham_radio_config()
@@ -119,4 +121,5 @@ def attach_radio_stacks(app) -> None:
     )
     app.ham_radio_launcher = SDRPPLauncher(HAM_RADIO_PROFILE,
                                            resource_manager=app.sdr_resource_manager,
+                                           owner_name="sdrpp_ham", 
     )

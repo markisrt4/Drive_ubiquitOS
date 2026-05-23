@@ -1,13 +1,14 @@
 import subprocess
 import tkinter as tk
+import os
 from dataclasses import dataclass
 from typing import Callable, Dict, Optional
 from pathlib import Path
 
-from apps.carUi.aircraft_panel_manager import AircraftPanelManager
+from apps.carUi.aircraft_panel_manager  import AircraftPanelManager
 from apps.carUi.ham_radio_panel_manager import HamRadioPanelManager
-from apps.carUi.weather_panel_manager import WeatherPanelManager
-from apps.carUi.fm_radio_panel_manager import FMRadioPanelManager
+from apps.carUi.weather_panel_manager   import WeatherPanelManager
+from apps.carUi.fm_radio_panel_manager  import FMRadioPanelManager
 
 from apps.carUi.radio.radio_panel_manager import (
     RadioPanelManager,
@@ -42,10 +43,22 @@ class SDRControlPanel(tk.Tk):
         self.remote_display = remote_display
 
         self.title(title)
-        self.geometry("1024x600")
-        self.minsize(800, 480)
+
+        ui_geometry = os.getenv("CARSDR_GEOMETRY", "1024x600")
+        fullscreen  = os.getenv("CARSDR_FULLSCREEN", "1") == "1"
+
+        self.compact_ui = self._geometry_is_compact(ui_geometry)
+
+        self.geometry(ui_geometry)
+        if self.compact_ui:
+            self.minsize(800, 480)
+            self.maxsize(800, 480)
+        else:
+            self.minsize(800, 480)
+
+        self.attributes("-fullscreen", fullscreen)
+
         self.configure(bg=COLORS["app_bg"])
-        self.attributes("-fullscreen", True)
 
         self.status_var = tk.StringVar(value="Ready")
         self.content_frame: Optional[tk.Frame] = None
@@ -56,19 +69,52 @@ class SDRControlPanel(tk.Tk):
         self.show_main_menu()
         self.bind("<Escape>", self._toggle_fullscreen)
 
-        self.aircraft_panel_manager = AircraftPanelManager(self)
-        self.fm_radio_panel_manager = FMRadioPanelManager(self)
+        self.aircraft_panel_manager  = AircraftPanelManager(self)
+        self.fm_radio_panel_manager  = FMRadioPanelManager (self)
         self.ham_radio_panel_manager = HamRadioPanelManager(self)
-        self.weather_panel_manager = WeatherPanelManager(self)
+        self.weather_panel_manager   = WeatherPanelManager (self)
+
+    @staticmethod
+    def _geometry_is_compact(geometry: str) -> bool:
+        """
+        Decide compact UI from requested app geometry, not physical monitor size.
+
+        Tk's winfo_screenwidth()/height() reports the host display, which is useless
+        when testing an 800x480 Pi layout inside a window on a larger monitor.
+        """
+        try:
+            size = geometry.split("+", 1)[0]
+            width_text, height_text = size.lower().split("x", 1)
+            width = int(width_text)
+            height = int(height_text)
+            return width <= 900 or height <= 520
+        except Exception:
+            return False
 
     # ---------------------------
     # UI Construction
     # ---------------------------
     def _build_ui(self) -> None:
+
+        print(f"[UI] Loaded SDRControlPanel from: {__file__}")
+        print(f"[UI] Screen size: {self.winfo_screenwidth()}x{self.winfo_screenheight()}")
+
+        small_display = (
+            self.winfo_screenwidth() <= 1024
+            or self.winfo_screenheight() <= 600
+        )
+        print(f"[UI] small_display={small_display}")
+        
         container = tk.Frame(self, bg=COLORS["app_bg"])
         container.pack(fill="both", expand=True)
 
-        self.top_bar = tk.Frame(container, bg=COLORS["top_bar_bg"], height=68)
+        top_bar_height = 50 if small_display else 68
+
+        self.top_bar = tk.Frame(
+            container,
+            bg=COLORS["top_bar_bg"],
+            height=top_bar_height,
+        )
         self.top_bar.pack(fill="x", side="top")
         self.top_bar.pack_propagate(False)
 
@@ -77,35 +123,43 @@ class SDRControlPanel(tk.Tk):
         self.top_bar.columnconfigure(2, weight=1)
 
         left_group = tk.Frame(self.top_bar, bg=COLORS["top_bar_bg"])
-        left_group.grid(row=0, column=0, sticky="w", padx=(10, 0), pady=8)
+        left_group.grid(row=0, column=0, sticky="w", padx=(8, 0), pady=6 if small_display else 8)
 
         center_group = tk.Frame(self.top_bar, bg=COLORS["top_bar_bg"])
-        center_group.grid(row=0, column=1, sticky="nsew", pady=8)
+        center_group.grid(row=0, column=1, sticky="nsew", pady=6 if small_display else 8)
 
         right_group = tk.Frame(self.top_bar, bg=COLORS["top_bar_bg"])
-        right_group.grid(row=0, column=2, sticky="e", padx=(0, 16), pady=8)
+        right_group.grid(row=0, column=2, sticky="e", padx=(0, 10 if small_display else 16), pady=6 if small_display else 8)
 
         self.left_button = tk.Button(
             left_group,
             text="",
-            font=FONTS["back"],
+            font=(("Arial", 12, "bold") if small_display else FONTS["back"]),
             bg=COLORS["top_bar_bg"],
             fg=COLORS["top_bar_fg"],
             activebackground=COLORS["top_bar_active"],
             activeforeground=COLORS["top_bar_fg"],
             bd=1,
-            padx=16,
-            pady=6,
+            padx=10 if small_display else 16,
+            pady=4 if small_display else 6,
             cursor="hand2",
             command=self.show_main_menu,
         )
-        self.left_button.pack(side="left", padx=(0, 12))
+        self.left_button.pack(side="left", padx=(0, 8 if small_display else 12))
         self.left_button.pack_forget()
 
         self.title_label = tk.Label(
             left_group,
-            text="Mark's CarSDR Control Panel",
-            font=FONTS["title"],
+            text=(
+                "Mark's CarSDR"
+                if small_display
+                else "Mark's CarSDR Control Panel"
+            ),
+            font=(
+                ("Arial", 16, "bold")
+                if small_display
+                else FONTS["title"]
+            ),
             bg=COLORS["top_bar_bg"],
             fg=COLORS["top_bar_fg"],
         )
@@ -114,7 +168,7 @@ class SDRControlPanel(tk.Tk):
         self.freq_label = tk.Label(
             center_group,
             textvariable=self.current_freq_var,
-            font=("Arial", 18, "bold"),
+            font=(("Arial", 13, "bold") if small_display else ("Arial", 18, "bold")),
             bg=COLORS["top_bar_bg"],
             fg=COLORS["top_bar_fg"],
             anchor="center",
@@ -124,31 +178,35 @@ class SDRControlPanel(tk.Tk):
         self.location_label = tk.Label(
             right_group,
             textvariable=self.location_var,
-            font=FONTS["status"],
+            font=(("Arial", 9) if small_display else FONTS["status"]),
             bg=COLORS["top_bar_bg"],
             fg=COLORS["top_bar_fg"],
-            padx=10,
+            padx=6 if small_display else 10,
         )
-        self.location_label.pack(side="left", padx=(0, 12))
+        self.location_label.pack(side="left", padx=(0, 8 if small_display else 12))
 
         self.power_button = tk.Button(
             right_group,
             text="⏻",
-            font=("Arial", 18, "bold"),
+            font=(
+                ("Arial", 14, "bold")
+                if small_display
+                else ("Arial", 18, "bold")
+            ),
+            width=3 if small_display else 4,
+            height=1,
             bg=COLORS["power_bg"],
             fg=COLORS["power_fg"],
             activebackground=COLORS["power_active"],
             activeforeground=COLORS["power_fg"],
             bd=0,
-            width=4,
-            height=1,
             command=self.power_off,
             cursor="hand2",
         )
         self.power_button.pack(side="right")
 
         self.content_frame = tk.Frame(container, bg=COLORS["app_bg"])
-        self.content_frame.pack(fill="both", expand=True, padx=18, pady=18)
+        self.content_frame.pack(fill="both", expand=True, padx=8 if small_display else 18, pady=8 if small_display else 18)
 
         status_bar = tk.Label(
             container,
@@ -156,9 +214,13 @@ class SDRControlPanel(tk.Tk):
             anchor="w",
             bg=COLORS["status_bg"],
             fg=COLORS["status_fg"],
-            font=FONTS["status"],
-            padx=14,
-            pady=10,
+            font=(
+                ("Arial", 9)
+                if small_display
+                else FONTS["status"]
+            ),
+            padx=10 if small_display else 14,
+            pady=4 if small_display else 10,
         )
         status_bar.pack(fill="x", side="bottom")
 
@@ -183,7 +245,7 @@ class SDRControlPanel(tk.Tk):
             ("fm_radio", "FM RADIO", "Broadcast radio", "Launch SDR++ / presets", 0, 0),
             ("weather", "WEATHER", "Forecast + WX band", "Radar / NOAA", 0, 1),
             ("aircraft", "AIRCRAFT", "ADS-B + Airband", "Traffic / chatter", 0, 2),
-            ("ham_radio", "HAM RADIO", "Amateur bands", "Scanner / SDR", 1, 0),
+            ("ham_radio", "HAM", "Amateur radio", "VHF / UHF", 1, 0),
             ("lighting", "LIGHTING", "Cabin / accent", "Controls", 1, 1),
             ("settings", "SETTINGS", "System", "Display / radio config", 1, 2),
         ]
@@ -191,7 +253,7 @@ class SDRControlPanel(tk.Tk):
         for key, title, subtitle, detail, row, col in tile_map:
             spec = TileSpec(key, title, "")
             tile = self._create_car_tile(dashboard, spec, subtitle, detail)
-            tile.grid(row=row, column=col, sticky="nsew", padx=10, pady=10)
+            tile.grid(row=row, column=col, sticky="nsew", padx=6 if self.compact_ui else 10, pady=6 if self.compact_ui else 10)
 
     def _toggle_fullscreen(self, event=None) -> None:
         current = bool(self.attributes("-fullscreen"))
@@ -223,16 +285,36 @@ class SDRControlPanel(tk.Tk):
         subtitle: str,
         detail: str,
     ) -> tk.Frame:
-        small = self.winfo_screenwidth() <= 1024 or self.winfo_screenheight() <= 600
+        small = self.compact_ui
         is_preset = "_preset_" in spec.key or spec.key.startswith(("fm_", "ham_", "airband_", "weather_radio_"))
 
+        is_main_tile = spec.key in {
+            "fm_radio",
+            "weather",
+            "aircraft",
+            "ham_radio",
+            "lighting",
+            "settings",
+        }
+        
         if small:
-            title_font = ("Arial", 18 if not is_preset else 20, "bold")
-            subtitle_font = ("Arial", 10)
-            detail_font = ("Arial", 9)
-            body_padx = 10
-            body_pady = 6
+            if is_main_tile:
+                title_font = ("Arial", 19, "bold")
+                subtitle_font = ("Arial", 10)
+                detail_font = ("Arial", 9)
+            elif is_preset:
+                title_font = ("Arial", 18, "bold")
+                subtitle_font = ("Arial", 9)
+                detail_font = ("Arial", 8)
+            else:
+                title_font = ("Arial", 17, "bold")
+                subtitle_font = ("Arial", 10)
+                detail_font = ("Arial", 9)
+
+            body_padx = 12
+            body_pady = 8
             top_accent_height = 4
+
         else:
             title_font = FONTS["tile_title"]
             subtitle_font = FONTS["tile_subtitle"]
@@ -337,7 +419,13 @@ class SDRControlPanel(tk.Tk):
     # Panel navigation
     # ---------------------------
     def show_main_menu(self) -> None:
-        self.title_label.config(text="Mark's CarSDR Control Panel")
+        title_text = (
+            "CarSDR"
+            if self.compact_ui
+            else "Mark's CarSDR Control Panel"
+        )
+
+        self.title_label.config(text=title_text)
         self.left_button.pack_forget()
         self._build_main_tile_grid()
         self.status_var.set("Ready")
