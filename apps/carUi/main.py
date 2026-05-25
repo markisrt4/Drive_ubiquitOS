@@ -1,7 +1,7 @@
 from typing import Callable
 from .sdrControlPanel import SDRControlPanel
 from ..stack.radioStack import attach_radio_stacks
-#from modules.gps.gps_device import GPSDevice
+from modules.gps.gps_device import GPSDevice
 
 
 def make_on_fm_radio(app: SDRControlPanel) -> Callable[[str], None]:
@@ -43,10 +43,12 @@ def on_settings(component: str) -> None:
 
 if __name__ == "__main__":
 
-    #gps_device = GPSDevice()
-    #gps_device.start()
+    gps_device = GPSDevice()
+    gps_device.start()
 
     app = SDRControlPanel(remote_display=":2")
+    app.gps_device = gps_device
+    app.start_gps_ui_updates()
 
     attach_radio_stacks(app)
 

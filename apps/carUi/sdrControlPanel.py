@@ -483,6 +483,25 @@ class SDRControlPanel(tk.Tk):
 
         self.location_var.set(f"🌎 lat.{lat:.4f}, lon.{lon:.4f}")
 
+    def start_gps_ui_updates(self, interval_ms: int = 1000) -> None:
+        self._update_gps_ui(interval_ms)
+
+
+    def _update_gps_ui(self, interval_ms: int = 1000) -> None:
+        gps_device = getattr(self, "gps_device", None)
+
+        if gps_device is not None:
+            pos = gps_device.position()
+
+            if pos.get("fix") and pos.get("lat") is not None and pos.get("lon") is not None:
+                self.set_location(
+                    float(pos["lat"]),
+                    float(pos["lon"]),
+                )
+            else:
+                self.location_var.set("🌎 GPS searching...")
+
+        self.after(interval_ms, lambda: self._update_gps_ui(interval_ms))
 
     @staticmethod
     def _format_frequency(frequency_hz: int) -> str:
