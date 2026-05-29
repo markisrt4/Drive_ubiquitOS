@@ -9,17 +9,26 @@ from apps.launchers.process_manager import (
     is_process_running,
 )
 
+from modules.logging.logging_paths import app_logging_file
+
 class ADSBLauncher(AppLauncherIf):
     def __init__(
         self,
         url: str = "http://127.0.0.1/tar1090",
-        readsb_log: str = "/tmp/carsdr-readsb.log",
+        readsb_log: Optional[str] = None,
+        browser_log_file: Optional[str] = None,
         close_existing_display_apps: bool = False,
         resource_manager=None,
         owner_name: str = "adsb",
     ):
         self.url = url
-        self.readsb_log = readsb_log
+        self.readsb_log = self.log_file = (
+            readsb_log
+            or app_logging_file(
+                "carsdr",
+                "carsdr-readsb.log",
+            )
+        )
         self.close_existing_display_apps = close_existing_display_apps
         self.resource_manager = resource_manager
         self.owner_name = owner_name
@@ -27,7 +36,13 @@ class ADSBLauncher(AppLauncherIf):
         self.browser = BrowserKioskLauncher(
             url=url,
             process_pattern="127.0.0.1/tar1090",
-            log_file="/tmp/carsdr-adsb-browser.log",
+            log_file=(
+                browser_log_file
+                or app_logging_file(
+                    "carsdr",
+                    "carsdr-adsb-browser.log",
+                )
+            ),
         )
 
         self._readsb_proc: Optional[subprocess.Popen] = None

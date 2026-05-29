@@ -53,12 +53,12 @@ if __name__ == "__main__":
     attach_radio_stacks(app)
 
     app.callbacks.update({
-        "fm_radio": lambda key: app.fm_radio_panel_manager.show(),
+        "fm_radio":  lambda key: app.fm_radio_panel_manager.show(),
         "ham_radio": lambda key: app.ham_radio_panel_manager.show(),
-        "aircraft": lambda key: app.aircraft_panel_manager.show(),
+        "aircraft":  lambda key: app.aircraft_panel_manager.show(),
         "lighting": on_lighting,
-        "weather": lambda key: app.weather_panel_manager.show(),
-        "settings": on_settings,
+        "weather":   lambda key: app.weather_panel_manager.show(),
+        "settings":  lambda key: app.settings_panel_manager.show(),
     })
 
     app.mainloop()

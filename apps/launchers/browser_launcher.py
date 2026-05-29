@@ -10,16 +10,24 @@ from apps.launchers.process_manager import (
     kill_process_pattern,
 )
 
+from modules.logging.logging_paths import app_logging_file
+
 class BrowserKioskLauncher(AppLauncherIf):
     def __init__(
         self,
         url: str,
         process_pattern: str = "chromium",
-        log_file: str = "/tmp/carsdr-browser.log",
+        log_file: Optional[str] = None,
     ):
         self.url = url
         self.process_pattern = process_pattern
-        self.log_file = log_file
+        self.log_file = (
+            log_file
+            or app_logging_file(
+                "carsdr",
+                "carsdr-browser.log",
+            )
+        ) 
         self._process: Optional[subprocess.Popen] = None
 
     def _find_browser(self) -> str:

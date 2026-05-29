@@ -3,22 +3,14 @@ from __future__ import annotations
 import tkinter as tk
 from typing import Callable, Optional
 
-from apps.carUi.radio.radio_panel_config import (
-    RadioPanelConfig,
-)
-
-from apps.carUi.radio.radio_panel_controller import (
-    RadioPanelController,
-)
-
+from apps.carUi.radio.radio_panel_config import RadioPanelConfig
+from apps.carUi.radio.radio_panel_controller import RadioPanelController
 from apps.carUi.radio.radio_status_formatter import (
     compact_preset_label,
     format_frequency,
     format_step,
 )
-
 from apps.launchers.app_launcher_if import AppLauncherIf
-
 from modules.radio.radio_controller import RadioController
 from modules.radio.radio_types import RadioPreset
 
@@ -35,6 +27,7 @@ class RadioPanelManager:
         set_status: Optional[Callable[[str], None]] = None,
         on_preset_pressed: Optional[Callable[[RadioPreset], None]] = None,
         on_frequency_changed: Optional[Callable[[int], None]] = None,
+        presets_per_bank: int = 6,
     ) -> None:
         self.parent = parent
         self.create_tile = create_tile
@@ -60,6 +53,11 @@ class RadioPanelManager:
 
         self.preset_tiles: dict[int, tk.Frame] = {}
         self.active_preset_frequency_hz: Optional[int] = None
+
+        self.presets_per_bank = max(1, presets_per_bank)
+        self.preset_bank_index = 0
+        self.preset_grid: Optional[tk.Frame] = None
+        self.preset_bank_label_var = tk.StringVar(value="Bank 1/1")
 
     def show(self) -> tk.Frame:
         self.destroy()
@@ -93,11 +91,18 @@ class RadioPanelManager:
         control_col = tk.Frame(main, bg=self._app_bg())
         control_col.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
 
-        preset_grid = tk.Frame(main, bg=self._app_bg())
-        preset_grid.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
+        preset_area = tk.Frame(main, bg=self._app_bg())
+        preset_area.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
+        preset_area.columnconfigure(0, weight=1)
+        preset_area.rowconfigure(0, weight=1)
+        preset_area.rowconfigure(1, weight=0)
+
+        self.preset_grid = tk.Frame(preset_area, bg=self._app_bg())
+        self.preset_grid.grid(row=0, column=0, sticky="nsew")
 
         self._build_control_tiles(control_col)
-        self._build_preset_tiles(preset_grid)
+        self._build_preset_tiles(self.preset_grid)
+        self._build_preset_bank_nav(preset_area)
         self._build_status_row(root)
 
     def _build_control_tiles(self, parent: tk.Frame) -> None:
@@ -170,7 +175,19 @@ class RadioPanelManager:
             )
 
     def _build_preset_tiles(self, parent: tk.Frame) -> None:
-        presets = self.radio_controller.presets
+        self.preset_tiles.clear()
+
+        for child in parent.winfo_children():
+            child.destroy()
+
+        all_presets = self.radio_controller.presets
+        bank_count = self._preset_bank_count()
+        self.preset_bank_index = min(self.preset_bank_index, bank_count - 1)
+
+        start = self.preset_bank_index * self.presets_per_bank
+        end = start + self.presets_per_bank
+        presets = all_presets[start:end]
+
         cols = max(1, self.panel_config.preset_columns)
         rows = max(1, (len(presets) + cols - 1) // cols)
 
@@ -180,37 +197,106 @@ class RadioPanelManager:
         for col in range(cols):
             parent.columnconfigure(col, weight=1, uniform=f"{self.panel_config.key}_preset_col")
 
+        precision = 3 if self.panel_config.key in {"airband", "ham", "weather_radio"} else 1
+
         for index, preset in enumerate(presets):
             row = index // cols
             col = index % cols
+            preset_number = start + index + 1
 
-            preset_number = index + 1
-
-            precision = (3
-                if self.panel_config.key in {
-                    "airband",
-                    "ham",
-                    "weather_radio",
-                }
-                else 1
-            )
             tile = self.create_tile(
                 parent,
                 f"{self.panel_config.key}_preset_{preset.frequency_hz}",
                 compact_preset_label(preset, precision=precision),
                 f"Preset {preset_number}",
-                format_frequency(
-                    preset.frequency_hz,
-                    precision=3 if self.panel_config.key in {
-                        "airband",
-                        "ham",
-                        "weather_radio",
-                    } else 1,
-                ),
+                format_frequency(preset.frequency_hz, precision=precision),
             )
             self.preset_tiles[preset.frequency_hz] = tile
             tile.grid(row=row, column=col, sticky="nsew", padx=6, pady=6)
             self._bind_click_recursive(tile, lambda p=preset: self.controller.tune_preset(p))
+
+        self._refresh_active_preset_tile()
+        self._update_preset_bank_label()
+
+    def _build_preset_bank_nav(self, parent: tk.Frame) -> None:
+        nav = tk.Frame(parent, bg=self._app_bg())
+        nav.grid(row=1, column=0, sticky="ew", pady=(4, 0))
+
+        nav.columnconfigure(0, weight=1)
+        nav.columnconfigure(1, weight=1)
+        nav.columnconfigure(2, weight=1)
+
+        prev_button = tk.Button(
+            nav,
+            text="◀ Bank",
+            font=self._small_button_font(),
+            bg=self._button_bg(),
+            fg=self._button_fg(),
+            activebackground=self._status_fg(),
+            activeforeground=self._status_bg(),
+            bd=0,
+            padx=8,
+            pady=3,
+            command=self.previous_preset_bank,
+            cursor="hand2",
+        )
+        prev_button.grid(row=0, column=0, sticky="ew", padx=(0, 4))
+
+        label = tk.Label(
+            nav,
+            textvariable=self.preset_bank_label_var,
+            font=self._small_button_font(),
+            bg=self._app_bg(),
+            fg=self._status_fg(),
+            anchor="center",
+            padx=4,
+        )
+        label.grid(row=0, column=1, sticky="ew")
+
+        next_button = tk.Button(
+            nav,
+            text="Bank ▶",
+            font=self._small_button_font(),
+            bg=self._button_bg(),
+            fg=self._button_fg(),
+            activebackground=self._status_fg(),
+            activeforeground=self._status_bg(),
+            bd=0,
+            padx=8,
+            pady=3,
+            command=self.next_preset_bank,
+            cursor="hand2",
+        )
+        next_button.grid(row=0, column=2, sticky="ew", padx=(4, 0))
+
+    def previous_preset_bank(self) -> None:
+        bank_count = self._preset_bank_count()
+        self.preset_bank_index = (self.preset_bank_index - 1) % bank_count
+        self._refresh_preset_bank()
+
+    def next_preset_bank(self) -> None:
+        bank_count = self._preset_bank_count()
+        self.preset_bank_index = (self.preset_bank_index + 1) % bank_count
+        self._refresh_preset_bank()
+
+    def _refresh_preset_bank(self) -> None:
+        if self.preset_grid is None:
+            return
+
+        self._build_preset_tiles(self.preset_grid)
+        self._status(
+            f"{self.panel_config.title} preset bank "
+            f"{self.preset_bank_index + 1}/{self._preset_bank_count()}"
+        )
+
+    def _preset_bank_count(self) -> int:
+        total = len(self.radio_controller.presets)
+        return max(1, (total + self.presets_per_bank - 1) // self.presets_per_bank)
+
+    def _update_preset_bank_label(self) -> None:
+        self.preset_bank_label_var.set(
+            f"Bank {self.preset_bank_index + 1}/{self._preset_bank_count()}"
+        )
 
     def _add_control_tile(
         self,
@@ -296,18 +382,18 @@ class RadioPanelManager:
 
     def _set_active_preset_tile(self, preset: RadioPreset) -> None:
         self.active_preset_frequency_hz = preset.frequency_hz
+        self._refresh_active_preset_tile()
 
+    def _refresh_active_preset_tile(self) -> None:
         for frequency_hz, tile in self.preset_tiles.items():
-            active = frequency_hz == preset.frequency_hz
+            active = frequency_hz == self.active_preset_frequency_hz
             self._set_tile_active(tile, active)
-
 
     def _set_tile_active(self, tile: tk.Widget, active: bool) -> None:
         bg = self._status_fg() if active else self._tile_bg()
         fg = self._status_bg() if active else self._tile_fg()
 
         self._apply_widget_colors(tile, bg=bg, fg=fg)
-
 
     def _apply_widget_colors(self, widget: tk.Widget, bg: str, fg: str) -> None:
         try:
@@ -333,16 +419,28 @@ class RadioPanelManager:
 
         if matched_preset is not None:
             self._set_active_preset_tile(matched_preset)
+            self._ensure_preset_bank_visible(matched_preset)
         else:
             self._clear_active_preset_tile()
 
+    def _ensure_preset_bank_visible(self, preset: RadioPreset) -> None:
+        try:
+            preset_index = self.radio_controller.presets.index(preset)
+        except ValueError:
+            return
+
+        wanted_bank_index = preset_index // self.presets_per_bank
+        if wanted_bank_index == self.preset_bank_index:
+            return
+
+        self.preset_bank_index = wanted_bank_index
+        self._refresh_preset_bank()
 
     def _find_preset_by_frequency(self, frequency_hz: int) -> Optional[RadioPreset]:
         for preset in self.radio_controller.presets:
             if preset.frequency_hz == frequency_hz:
                 return preset
         return None
-
 
     def _clear_active_preset_tile(self) -> None:
         self.active_preset_frequency_hz = None
@@ -381,7 +479,7 @@ class RadioPanelManager:
             return FONTS["status"]
         except Exception:
             return ("Arial", 10)
-        
+
     @staticmethod
     def _tile_bg() -> str:
         try:
@@ -390,7 +488,6 @@ class RadioPanelManager:
         except Exception:
             return "#20252b"
 
-
     @staticmethod
     def _tile_fg() -> str:
         try:
@@ -398,3 +495,27 @@ class RadioPanelManager:
             return COLORS["tile_title"]
         except Exception:
             return "#ffffff"
+
+    @staticmethod
+    def _button_bg() -> str:
+        try:
+            from apps.carUi.uiTheme import COLORS
+            return COLORS["tile_bg"]
+        except Exception:
+            return "#20252b"
+
+    @staticmethod
+    def _button_fg() -> str:
+        try:
+            from apps.carUi.uiTheme import COLORS
+            return COLORS["tile_title"]
+        except Exception:
+            return "#ffffff"
+
+    @staticmethod
+    def _small_button_font():
+        try:
+            from apps.carUi.uiTheme import FONTS
+            return FONTS.get("status", ("Arial", 10))
+        except Exception:
+            return ("Arial", 10)

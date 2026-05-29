@@ -49,12 +49,13 @@ HAM_RADIO_PROFILE = SDRPPProfile(
     start_frequency_hz=450_000_000,
 )
 
+from modules.logging.logging_paths import app_logging_file
 
 class SDRPPLauncher(AppLauncherIf):
     def __init__(
         self,
         profile: SDRPPProfile = FM_BROADCAST_PROFILE,
-        log_file: str = "/tmp/carsdr-sdrpp.log",
+        log_file: Optional[str] = None,
         fullscreen: bool = True,
         resource_manager=None,
         owner_name: str = "sdrpp",
@@ -63,7 +64,13 @@ class SDRPPLauncher(AppLauncherIf):
         rigctl_timeout_sec: float = 15.0,
     ):
         self.profile = profile
-        self.log_file = log_file
+        self.log_file = (
+            log_file
+            or app_logging_file(
+                "carsdr",
+                "carsdr-sdrpp.log",
+            )
+        )
         self.fullscreen = fullscreen
         self._process: Optional[subprocess.Popen] = None
         self.resource_manager = resource_manager

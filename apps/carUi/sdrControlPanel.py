@@ -9,6 +9,7 @@ from apps.carUi.aircraft_panel_manager  import AircraftPanelManager
 from apps.carUi.ham_radio_panel_manager import HamRadioPanelManager
 from apps.carUi.weather_panel_manager   import WeatherPanelManager
 from apps.carUi.fm_radio_panel_manager  import FMRadioPanelManager
+from apps.carUi.settings_panel_manager  import SettingsPanelManager
 
 from apps.carUi.radio.radio_panel_manager import (
     RadioPanelManager,
@@ -73,6 +74,7 @@ class SDRControlPanel(tk.Tk):
         self.fm_radio_panel_manager  = FMRadioPanelManager (self)
         self.ham_radio_panel_manager = HamRadioPanelManager(self)
         self.weather_panel_manager   = WeatherPanelManager (self)
+        self.settings_panel_manager  = SettingsPanelManager(self)
 
     @staticmethod
     def _geometry_is_compact(geometry: str) -> bool:
@@ -141,7 +143,7 @@ class SDRControlPanel(tk.Tk):
             activeforeground=COLORS["top_bar_fg"],
             bd=1,
             padx=10 if small_display else 16,
-            pady=4 if small_display else 6,
+            pady=4  if small_display else 6,
             cursor="hand2",
             command=self.show_main_menu,
         )
@@ -184,6 +186,38 @@ class SDRControlPanel(tk.Tk):
             padx=6 if small_display else 10,
         )
         self.location_label.pack(side="left", padx=(0, 8 if small_display else 12))
+
+        self.vol_down_button = tk.Button(
+            right_group,
+            text="−",
+            font=(("Arial", 12, "bold") if self.compact_ui else ("Arial", 14, "bold")),
+            bg=COLORS["tile_bg"],
+            fg=COLORS["top_bar_fg"],
+            activebackground=COLORS["tile_accent"],
+            activeforeground=COLORS["top_bar_fg"],
+            bd=0,
+            width=3,
+            height=1,
+            command=self.volume_down,
+            cursor="hand2",
+        )
+        self.vol_down_button.pack(side="left", padx=(0, 4))
+
+        self.vol_up_button = tk.Button(
+            right_group,
+            text="+",
+            font=(("Arial", 12, "bold") if self.compact_ui else ("Arial", 14, "bold")),
+            bg=COLORS["tile_bg"],
+            fg=COLORS["top_bar_fg"],
+            activebackground=COLORS["tile_accent"],
+            activeforeground=COLORS["top_bar_fg"],
+            bd=0,
+            width=3,
+            height=1,
+            command=self.volume_up,
+            cursor="hand2",
+        )
+        self.vol_up_button.pack(side="left", padx=(0, 8))
 
         self.power_button = tk.Button(
             right_group,
@@ -445,6 +479,23 @@ class SDRControlPanel(tk.Tk):
 
     def show_fm_radio_menu(self) -> None:
         self.fm_radio_panel_manager.show()
+
+    def volume_up(self) -> None:
+        self._adjust_system_volume("+5%")
+
+    def volume_down(self) -> None:
+        self._adjust_system_volume("-5%")
+
+    def _adjust_system_volume(self, amount: str) -> None:
+        try:
+            subprocess.run(
+                ["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", amount],
+                check=False,
+            )
+            self.status_var.set(f"Volume {amount}")
+        except Exception as exc:
+            self.status_var.set(f"Volume control failed: {exc}")
+            print(f"[UI] Volume control failed: {exc}")
 
     def power_off(self) -> None:
         """
