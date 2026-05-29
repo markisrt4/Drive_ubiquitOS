@@ -175,7 +175,7 @@ class SDRPPLauncher(AppLauncherIf):
             log.flush()
 
             self._process = subprocess.Popen(
-                [sdrpp_path],
+                [sdrpp_path, "--autostart"],
                 env=env,
                 stdout=log,
                 stderr=subprocess.STDOUT,

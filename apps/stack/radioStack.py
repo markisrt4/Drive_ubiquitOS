@@ -123,3 +123,41 @@ def attach_radio_stacks(app) -> None:
                                            resource_manager=app.sdr_resource_manager,
                                            owner_name="sdrpp_ham", 
     )
+
+def ensure_radio_profile(
+    app,
+    launcher,
+    controller,
+    profile,
+    remote_display: str = ":2",
+) -> None:
+    """
+    Make sure SDR++ is running, rigctl is ready, and the active radio profile
+    has the correct mode/frequency for the selected panel.
+    """
+    set_status = app.status_var.set
+
+    launcher.launch(
+        remote_display=remote_display,
+        set_status=set_status,
+    )
+
+    # Force mode first, then frequency.
+    # SDR++ can come up with whatever it last used, because naturally it remembers
+    # the one thing we do not want it to trust blindly.
+    mode = controller.default_mode
+    controller.set_mode(mode)
+
+    frequency_hz = profile.start_frequency_hz
+    if frequency_hz is not None:
+        controller.set_frequency(frequency_hz)
+        app.set_current_frequency(frequency_hz)
+
+    controller.start()
+
+    set_status(
+        f"{profile.name} ready: {mode.name}, "
+        f"{frequency_hz / 1_000_000:.3f} MHz"
+        if frequency_hz is not None
+        else f"{profile.name} ready: {mode.name}"
+    )
