@@ -10,11 +10,3 @@ class InputDeviceIf(ABC):
     @abstractmethod
     def unbind(self, input_name: str) -> None:
         pass
-
-    @abstractmethod
-    def start(self) -> None:
-        pass
-
-    @abstractmethod
-    def stop(self) -> None:
-        pass

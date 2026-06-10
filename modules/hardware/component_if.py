@@ -1,8 +1,18 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
+from dataclasses import dataclass
 
-class HardwareDeviceIf(ABC):
+
+@dataclass(frozen=True)
+class ComponentStatus:
+    name: str
+    running: bool
+    available: bool
+    last_error: str | None = None
+
+
+class ComponentIf(ABC):
     def __init__(self, name: str):
         self.name = name
         self.running = False
@@ -18,7 +28,7 @@ class HardwareDeviceIf(ABC):
         pass
 
     @abstractmethod
-    def status(self) -> dict[str, Any]:
+    def status(self) -> ComponentStatus:
         pass
 
     def is_running(self) -> bool:

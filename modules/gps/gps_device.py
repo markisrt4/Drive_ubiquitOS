@@ -3,10 +3,10 @@ from typing import Any
 
 import gps
 
-from modules.hardware.hardware_device_if import HardwareDeviceIf
+from modules.hardware.component_if import ComponentIf, ComponentStatus  
 
 
-class GPSDevice(HardwareDeviceIf):
+class GPSDevice(ComponentIf):
     def __init__(self, name: str = "gps"):
         super().__init__(name)
 
@@ -42,10 +42,10 @@ class GPSDevice(HardwareDeviceIf):
                 if report.get("class") != "TPV":
                     continue
 
-                self.mode = getattr(report, "mode", None)
-                self.lat = getattr(report, "lat", None)
-                self.lon = getattr(report, "lon", None)
-                self.alt = getattr(report, "alt", None)
+                self.mode  = getattr(report, "mode",  None)
+                self.lat   = getattr(report, "lat",   None)
+                self.lon   = getattr(report, "lon",   None)
+                self.alt   = getattr(report, "alt",   None)
                 self.speed = getattr(report, "speed", None)
                 self.track = getattr(report, "track", None)
 
@@ -63,10 +63,10 @@ class GPSDevice(HardwareDeviceIf):
 
     def position(self) -> dict[str, float | None | bool]:
         return {
-            "fix": self.has_fix(),
-            "lat": self.lat,
-            "lon": self.lon,
-            "alt": self.alt,
+            "fix":   self.has_fix(),
+            "lat":   self.lat,
+            "lon":   self.lon,
+            "alt":   self.alt,
             "speed": self.speed,
             "track": self.track,
         }
