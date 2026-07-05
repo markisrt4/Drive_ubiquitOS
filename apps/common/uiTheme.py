@@ -39,3 +39,34 @@ FONTS = {
     "tile_detail":   (FONT_FAMILY, 12),
     "volume_button": (FONT_FAMILY, 16, "bold"),
 }
+
+MENU_TILE_STYLE = {
+    "compact": {
+        "main_title_font": (FONT_FAMILY, 19, "bold"),
+        "preset_title_font": (FONT_FAMILY, 18, "bold"),
+        "default_title_font": (FONT_FAMILY, 17, "bold"),
+        "subtitle_font": (FONT_FAMILY, 10),
+        "detail_font": (FONT_FAMILY, 9),
+        "body_padx": 12,
+        "body_pady": 8,
+        "accent_height": 4,
+        "title_wrap": 180,
+        "text_wrap": 220,
+        "tile_padx": 6,
+        "tile_pady": 6,
+    },
+    "normal": {
+        "main_title_font": FONTS["tile_title"],
+        "preset_title_font": FONTS["tile_title"],
+        "default_title_font": FONTS["tile_title"],
+        "subtitle_font": FONTS["tile_subtitle"],
+        "detail_font": FONTS["tile_detail"],
+        "body_padx": 22,
+        "body_pady": 18,
+        "accent_height": 5,
+        "title_wrap": 260,
+        "text_wrap": 300,
+        "tile_padx": 10,
+        "tile_pady": 10,
+    },
+}

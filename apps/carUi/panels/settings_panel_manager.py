@@ -1,6 +1,6 @@
 import tkinter as tk
 
-from apps.carUi.panel_manager_if import PanelManagerIf
+from apps.carUi.panels.panel_manager_if import PanelManagerIf
 
 
 class SettingsPanelManager(PanelManagerIf):

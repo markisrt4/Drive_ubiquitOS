@@ -13,6 +13,7 @@ class CarTopBar(tk.Frame):
         on_back: Callable[[], None],
         on_volume_down: Callable[[], None],
         on_volume_up: Callable[[], None],
+        on_settings: Callable[[], None],
         on_power: Callable[[], None],
         volume_level: int = 5,
         volume_steps: int = 8,
@@ -23,7 +24,7 @@ class CarTopBar(tk.Frame):
         self.compact_ui = compact_ui
         self.volume_steps = volume_steps
 
-        self.title_var = tk.StringVar(value="CarSDR" if compact_ui else "Mark's CarSDR Control Panel")
+        self.title_var = tk.StringVar(value="Drive UbiquitOS" if compact_ui else "Drive UbiquitOS Control Panel")
         self.frequency_var = tk.StringVar(value="--")
         self.location_var = tk.StringVar(value="🌎 lat.--, lon.--")
 
@@ -37,6 +38,7 @@ class CarTopBar(tk.Frame):
             on_back=on_back,
             on_volume_down=on_volume_down,
             on_volume_up=on_volume_up,
+            on_settings=on_settings,
             on_power=on_power,
             volume_level=volume_level,
         )
@@ -46,6 +48,7 @@ class CarTopBar(tk.Frame):
         on_back: Callable[[], None],
         on_volume_down: Callable[[], None],
         on_volume_up: Callable[[], None],
+        on_settings: Callable[[], None],
         on_power: Callable[[], None],
         volume_level: int,
     ) -> None:
@@ -147,6 +150,22 @@ class CarTopBar(tk.Frame):
             cursor="hand2",
         )
         self.vol_up_button.pack(side="left", padx=(0, 8))
+
+        self.settings_button = tk.Button(
+            right_group,
+            text="⚙",
+            font=(("Arial", 13, "bold") if small else ("Arial", 17, "bold")),
+            width=3 if small else 4,
+            height=1,
+            bg=COLORS["top_bar_bg"],
+            fg=COLORS["top_bar_fg"],
+            activebackground=COLORS["top_bar_active"],
+            activeforeground=COLORS["top_bar_fg"],
+            bd=0,
+            command=on_settings,
+            cursor="hand2",
+        )
+        self.settings_button.pack(side="left", padx=(0, 8))
 
         self.power_button = tk.Button(
             right_group,

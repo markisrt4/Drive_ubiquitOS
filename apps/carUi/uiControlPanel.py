@@ -1,22 +1,20 @@
+import subprocess
 import tkinter as tk
 import os
 from dataclasses import dataclass
-from turtle import title
 from typing import Callable, Dict, Optional
-from pathlib import Path
-
-from apps.carUi.aircraft_panel_manager  import AircraftPanelManager
-from apps.carUi.scanner_panel_manager   import ScannerPanelManager
-from apps.carUi.weather_panel_manager   import WeatherPanelManager
-from apps.carUi.fm_radio_panel_manager  import FMRadioPanelManager
-from apps.carUi.settings_panel_manager  import SettingsPanelManager
+from apps.carUi.panels.aircraft_panel_manager  import AircraftPanelManager
+from apps.carUi.panels.scanner_panel_manager   import ScannerPanelManager
+from apps.carUi.panels.weather_panel_manager   import WeatherPanelManager
+from apps.carUi.panels.fm_radio_panel_manager  import FMRadioPanelManager
+from apps.carUi.panels.settings_panel_manager  import SettingsPanelManager
+from apps.carUi.panels.lighting_panel_manager  import LightingPanelManager
+from apps.carUi.panels.spotify_panel_manager   import SpotifyPanelManager
 
 from apps.common.uiTheme import COLORS, FONTS, FONT_FAMILY
 
 from modules.audio.audio_controller import AudioController
 from modules.audio.pipewire_audio_controller import PipewireAudioController
-
-from apps.launchers.process_manager import close_display_apps
 
 from apps.carUi.top_bar import CarTopBar
 from apps.carUi.gps_ui_monitor import GPSUIMonitor
@@ -28,11 +26,19 @@ class TileSpec:
     icon: str
 
 
-class SDRControlPanel(tk.Tk):
+@dataclass(frozen=True)
+class MenuTile:
+    key: str
+    title: str
+    subtitle: str
+    detail: str
+
+
+class UiControlPanel(tk.Tk):
     def __init__(
         self,
         callbacks: Optional[Dict[str, Callable[[str], None]]] = None,
-        title: str = "SDR Control Panel",
+        title: str = "Ui Control Panel",
         remote_display: str = ":2",
     ) -> None:
         super().__init__()
@@ -42,17 +48,13 @@ class SDRControlPanel(tk.Tk):
 
         self.title(title)
 
-        ui_geometry = os.getenv("CARSDR_GEOMETRY", "1024x600")
-        fullscreen  = os.getenv("CARSDR_FULLSCREEN", "1") == "1"
+        ui_geometry = self._get_ui_geometry()
+        fullscreen = os.getenv("CARUI_FULLSCREEN", "0") == "1"
 
         self.compact_ui = self._geometry_is_compact(ui_geometry)
 
         self.geometry(ui_geometry)
-        if self.compact_ui:
-            self.minsize(800, 480)
-            self.maxsize(800, 480)
-        else:
-            self.minsize(800, 480)
+        self.minsize(800, 480)
 
         self.attributes("-fullscreen", fullscreen)
 
@@ -79,7 +81,54 @@ class SDRControlPanel(tk.Tk):
         self.scanner_panel_manager  = ScannerPanelManager (self)
         self.weather_panel_manager  = WeatherPanelManager (self)
         self.settings_panel_manager = SettingsPanelManager(self)
+        self.lighting_panel_manager = LightingPanelManager(self)
+        self.spotify_panel_manager  = SpotifyPanelManager (self)
+    def register_default_callbacks(self) -> None:
+        self.callbacks.update(
+            {
+                "radio":         lambda key: self.show_menu("radio"),
+                "aircraft":      lambda key: self.show_aircraft_menu(),
+                "gauges":        lambda key: self.show_menu("gauges"),
+                "weather":       lambda key: self.show_weather_menu(),
+                "lighting":      lambda key: self.show_lighting_menu(),
+                "media":         lambda key: self.show_menu("media"),
+                "fm_radio":      lambda key: self.show_fm_radio_menu(),
+                "scanner_radio": lambda key: self.show_scanner_radio_menu(),
+                "spotify":       lambda key: self.show_spotify_menu(),
+                "settings":      lambda key: self.show_settings_menu(),
+            }
+        )
 
+    @staticmethod
+    def _get_ui_geometry() -> str:
+        """
+        Resolve the requested UI size.
+
+        CARUI_GEOMETRY always wins when supplied, which is ideal for VM testing:
+            CARUI_GEOMETRY=800x480
+            CARUI_GEOMETRY=1024x600
+            CARUI_GEOMETRY=1280x720
+
+        CARUI_DISPLAY_PROFILE gives named defaults for common targets:
+            legacy  -> original 7 inch display / compact test window
+            vm      -> comfortable desktop test window
+            touch2  -> Raspberry Pi Touch Display 2 landscape
+        """
+        explicit_geometry = os.getenv("CARUI_GEOMETRY")
+        if explicit_geometry:
+            return explicit_geometry
+
+        profile = os.getenv("CARUI_DISPLAY_PROFILE", "vm").strip().lower()
+        profile_defaults = {
+            "legacy": "800x480",
+            "compact": "800x480",
+            "vm": "1024x600",
+            "desktop": "1024x600",
+            "touch2": "1280x720",
+            "display2": "1280x720",
+            "rpi-touch2": "1280x720",
+        }
+        return profile_defaults.get(profile, "1024x600")
 
     @staticmethod
     def _geometry_is_compact(geometry: str) -> bool:
@@ -103,14 +152,11 @@ class SDRControlPanel(tk.Tk):
     # ---------------------------
     def _build_ui(self) -> None:
 
-        print(f"[UI] Loaded SDRControlPanel from: {__file__}")
+        print(f"[UI] Loaded UiControlPanel from: {__file__}")
         print(f"[UI] Screen size: {self.winfo_screenwidth()}x{self.winfo_screenheight()}")
 
-        small_display = (
-            self.winfo_screenwidth() <= 1024
-            or self.winfo_screenheight() <= 600
-        )
-        print(f"[UI] small_display={small_display}")
+        small_display = self.compact_ui
+        print(f"[UI] compact_ui={self.compact_ui}")
         
         container = tk.Frame(self, bg=COLORS["app_bg"])
         container.pack(fill="both", expand=True)
@@ -121,6 +167,7 @@ class SDRControlPanel(tk.Tk):
             on_back=self.show_main_menu,
             on_volume_down=self.volume_down,
             on_volume_up=self.volume_up,
+            on_settings=self.show_settings_menu,
             on_power=self.power_off,
             volume_level=self.volume_level,
             volume_steps=8,
@@ -128,7 +175,12 @@ class SDRControlPanel(tk.Tk):
         self.top_bar.pack(fill="x", side="top")
 
         self.content_frame = tk.Frame(container, bg=COLORS["app_bg"])
-        self.content_frame.pack(fill="both", expand=True, padx=8 if small_display else 18, pady=8 if small_display else 18)
+        self.content_frame.pack(
+            fill="both",
+            expand=True,
+            padx=8 if small_display else 18,
+            pady=8 if small_display else 18,
+        )
 
         status_bar = tk.Label(
             container,
@@ -146,9 +198,34 @@ class SDRControlPanel(tk.Tk):
         )
         status_bar.pack(fill="x", side="bottom")
 
-    def _build_main_tile_grid(self) -> None:
+    @staticmethod
+    def _menu_tiles(menu_key: str) -> list[MenuTile]:
+        menus: dict[str, list[MenuTile]] = {
+            "main": [
+                MenuTile("radio",    "RADIO",    "FM / Scanner / NOAA", "Broadcast and monitoring"),
+                MenuTile("aircraft", "AIRCRAFT", "ADS-B + Airband",     "Traffic and chatter"),
+                MenuTile("gauges",   "GAUGES",   "OBD-II / telemetry",  "Vehicle dashboard"),
+                MenuTile("weather",  "WEATHER",  "Forecast + alerts",   "Conditions and warnings"),
+                MenuTile("lighting", "LIGHTING", "Cabin / accent",      "Lighting controls"),
+                MenuTile("media",    "MEDIA",    "Spotify / audio",     "Music and playback"),
+            ],
+            "radio": [
+                MenuTile("fm_radio",      "FM RADIO", "FM Broadcast radio", "Tune FM stations"),
+                MenuTile("scanner_radio", "SCANNER",  "Radio monitoring",   "Police / Fire / HAM / GMRS"),
+                MenuTile("weather",       "NOAA WX",  "Weather radio",      "NOAA and alerts"),
+            ],
+            "media": [
+                MenuTile("spotify", "SPOTIFY", "Streaming control", "Spotify app integration"),
+            ],
+            "gauges": [
+                MenuTile("gauges_placeholder", "COMING SOON", "OBD-II gauges", "RPM / boost / temps / voltage"),
+            ],
+        }
+        return menus.get(menu_key, menus["main"])
+
+    def _build_tile_grid(self, menu_key: str) -> None:
         """
-        Populate the main dashboard tiles.
+        Populate a 2x3 dashboard-style menu from data instead of hardcoded callbacks.
         """
         if self.content_frame is None:
             return
@@ -163,19 +240,21 @@ class SDRControlPanel(tk.Tk):
         for row in range(2):
             dashboard.rowconfigure(row, weight=1, uniform="dash_row")
 
-        tile_map = [
-            ("fm_radio",      "FM RADIO", "FM Broadcast radio", "Tune FM stations",           0, 0),
-            ("weather",       "WEATHER",  "Forecast + WX band", "Radar / NOAA",               0, 1),
-            ("aircraft",      "AIRCRAFT", "ADS-B + Airband",    "Traffic / chatter",          0, 2),
-            ("scanner_radio", "SCANNER",  "Radio Monitoring",   "Police / Fire / HAM / GMRS", 1, 0),
-            ("lighting",      "LIGHTING", "Cabin / accent",     "Lighting Controls",          1, 1),
-            ("settings",      "SETTINGS", "System",             "Display / radio config",     1, 2),
-        ]
+        for index, item in enumerate(self._menu_tiles(menu_key)):
+            row = index // 3
+            col = index % 3
+            spec = TileSpec(item.key, item.title, "")
+            tile = self._create_car_tile(dashboard, spec, item.subtitle, item.detail)
+            tile.grid(
+                row=row,
+                column=col,
+                sticky="nsew",
+                padx=6 if self.compact_ui else 10,
+                pady=6 if self.compact_ui else 10,
+            )
 
-        for key, title, subtitle, detail, row, col in tile_map:
-            spec = TileSpec(key, title, "")
-            tile = self._create_car_tile(dashboard, spec, subtitle, detail)
-            tile.grid(row=row, column=col, sticky="nsew", padx=6 if self.compact_ui else 10, pady=6 if self.compact_ui else 10)
+    def _build_main_tile_grid(self) -> None:
+        self._build_tile_grid("main")
 
     def _toggle_fullscreen(self, event=None) -> None:
         current = bool(self.attributes("-fullscreen"))
@@ -209,12 +288,12 @@ class SDRControlPanel(tk.Tk):
     ) -> tk.Frame:
         small = self.compact_ui
         is_main_tile = spec.key in {
-            "fm_radio",
-            "weather",
+            "radio",
             "aircraft",
-            "scanner_radio",
+            "gauges",
+            "weather",
             "lighting",
-            "settings",
+            "media",
         }
 
         is_preset = "_preset_" in spec.key and not is_main_tile
@@ -337,6 +416,7 @@ class SDRControlPanel(tk.Tk):
     def _run_callback(self, key: str) -> None:
         callback = self.callbacks.get(key)
         if callback is None:
+            self.status_var.set(f"No panel registered for: {key}")
             return
         try:
             callback(key)
@@ -349,9 +429,9 @@ class SDRControlPanel(tk.Tk):
     # ---------------------------
     def show_main_menu(self) -> None:
         title_text = (
-            "CarSDR"
+            "Drive UbiquitOS"
             if self.compact_ui
-            else "Mark's CarSDR Control Panel"
+            else "Drive UbiquitOS Control Panel"
         )
 
         self.top_bar.set_title(title_text)
@@ -359,6 +439,18 @@ class SDRControlPanel(tk.Tk):
         self.top_bar.hide_back_button()
         self._build_main_tile_grid()
         self.status_var.set("Ready")
+
+    def show_menu(self, menu_key: str) -> None:
+        titles = {
+            "radio": "Radio",
+            "media": "Media",
+            "gauges": "Gauges",
+        }
+        self.top_bar.set_title(titles.get(menu_key, "Drive UbiquitOS"))
+        self.top_bar.set_back_command(self.show_main_menu)
+        self.top_bar.show_back_button()
+        self._build_tile_grid(menu_key)
+        self.status_var.set(titles.get(menu_key, menu_key.title()))
 
     def show_aircraft_menu(self) -> None:
         self.aircraft_panel_manager.show()
@@ -371,6 +463,15 @@ class SDRControlPanel(tk.Tk):
 
     def show_settings_menu(self) -> None:
         self.settings_panel_manager.show()
+
+    def show_weather_menu(self) -> None:
+        self.weather_panel_manager.show()
+
+    def show_lighting_menu(self) -> None:
+        self.lighting_panel_manager.show()
+
+    def show_spotify_menu(self) -> None:
+        self.spotify_panel_manager.show()
 
     def volume_up(self) -> None:
         self.volume_level = self.audio_controller.volume_up()
@@ -395,11 +496,11 @@ class SDRControlPanel(tk.Tk):
 
     def power_off(self) -> None:
         """
-        Shut down CarSDR: close all remote display apps on :2 and quit the Tk app.
+        Shut down Drive UbiquitOS: close all remote display apps on :2 and quit the Tk app.
         Does NOT affect the host X session.
         """
         try:
-            self.status_var.set("Shutting down CarSDR apps...")
+            self.status_var.set("Shutting down Drive UbiquitOS apps...")
 
             # Close only apps on the remote display
             from apps.launchers.process_manager import close_display_apps
@@ -412,8 +513,6 @@ class SDRControlPanel(tk.Tk):
         self.quit()    # exits mainloop
         self.destroy() # destroys Tk root window
 
-    def show_weather_menu(self) -> None:
-        self.weather_panel_manager.show()
 
     def set_current_frequency(self, frequency_hz: int | None) -> None:
         if frequency_hz is None:

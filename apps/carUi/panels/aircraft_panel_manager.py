@@ -1,5 +1,5 @@
-from apps.carUi.aircraft_panel import AircraftPanel
-from apps.carUi.panel_manager_if import PanelManagerIf
+from apps.carUi.panels.aircraft_panel   import AircraftPanel
+from apps.carUi.panels.panel_manager_if import PanelManagerIf
 
 from apps.carUi.radio.radio_panel_manager import (
     RadioPanelManager,

@@ -1,4 +1,4 @@
-from modules.hardware.keyboard_device import KeyboardDevice
+from modules.hardware.input.keyboard_device import KeyboardDevice
 from modules.sdr.radio_controller import RadioController
 from .radio_input_adapter_if import RadioInputAdapterIf
 

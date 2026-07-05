@@ -1,10 +1,10 @@
 from dataclasses import dataclass
 from typing import Optional
 
-from apps.carUi.panel_manager_if import PanelManagerIf
-from apps.carUi.scannerRadioPanel import ScannerRadioPanel, ScannerBandTileSpec
-from apps.carUi.radio.radio_panel_config import RadioPanelConfig, RadioPanelTileConfig
-from apps.carUi.radio.radio_panel_manager import RadioPanelManager
+from apps.carUi.panels.panel_manager_if    import PanelManagerIf
+from apps.carUi.panels.scanner_radio_panel import ScannerRadioPanel, ScannerBandTileSpec
+from apps.carUi.radio.radio_panel_config   import RadioPanelConfig, RadioPanelTileConfig
+from apps.carUi.radio.radio_panel_manager  import RadioPanelManager
 
 
 @dataclass(frozen=True)

@@ -47,6 +47,7 @@ echo "[*] Installing base packages..."
 for pkg in \
   git curl wget ca-certificates \
   lighttpd \
+  bluez \
   python3 python3-venv python3-tk python3-pip \
   dbus-x11 xterm x11-apps wmctrl \
   openbox \
@@ -80,7 +81,9 @@ python -m pip install \
   geocoder \
   streamlit-autorefresh \
   gps \
-  gpsd-py3
+  gpsd-py3 \
+  pyserial \
+  bleak
 
 deactivate
 
