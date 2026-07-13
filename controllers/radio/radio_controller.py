@@ -96,3 +96,10 @@ class RadioController:
             return self.radio_range.max_frequency_hz
 
         return frequency_hz
+
+    def next_station(self) -> int:
+        return self._seek(direction=1)
+
+    def previous_station(self) -> int:
+        return self._seek(direction=-1)
+
