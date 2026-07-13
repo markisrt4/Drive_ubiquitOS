@@ -7,8 +7,11 @@ from protocols.obd2.obd2_response import Obd2Response
 
 
 class Obd2AdapterIf(ABC):
-    """
-    Interface for performing OBD-II diagnostic requests.
+    """Transport-independent interface for SAE J1979 requests.
+
+    A functional request may be answered by more than one ECU. Therefore
+    ``request`` returns every normalized response. No response is represented
+    by an empty tuple rather than ``None``.
     """
 
     @property
@@ -25,8 +28,5 @@ class Obd2AdapterIf(ABC):
         ...
 
     @abstractmethod
-    def request(
-        self,
-        request: Obd2Request,
-    ) -> Obd2Response | None:
+    def request(self, request: Obd2Request) -> tuple[Obd2Response, ...]:
         ...

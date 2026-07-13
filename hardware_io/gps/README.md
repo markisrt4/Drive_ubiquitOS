@@ -1,12 +1,22 @@
 # GPS Reader
 
-The `GpsReader` provides a simple interface for reading GPS data from `gpsd`.
+The `GpsReader` provides a small hardware I/O interface for receiving GPS data
+from `gpsd`.
 
-It monitors GPS position reports and returns the latest values as a `GpsData` object.
+The module does **not** open a USB serial device directly. `gpsd` owns the
+physical GPS device, such as `/dev/ttyACM0`, and `GpsReader` connects to the
+`gpsd` service over TCP at `127.0.0.1:2947` by default.
 
-## GPS Data
+```text
+USB GPS (/dev/ttyACM0) -> gpsd -> GpsReader -> callback
+```
 
-The following values are reported:
+This keeps USB device discovery and serial protocol handling outside the Python
+reader.
+
+## Reported Data
+
+`GpsData` contains:
 
 - Latitude
 - Longitude
@@ -14,47 +24,134 @@ The following values are reported:
 - Speed
 - Track
 - GPS fix mode
+- Satellites visible
+- Satellites used in the current fix
 
-The `GpsReader` only reports data received from the GPS service. Application-specific interpretation and behavior should be handled by higher-level components.
+The `has_fix` property is true when `gpsd` reports either a 2D or 3D fix.
 
-## Example
+The reader only reports hardware data received from `gpsd`. Application-specific
+interpretation and behavior belong in higher-level components.
 
-```python
-from hardware_io.gps import GpsData, GpsReader
+## Dependencies
 
-
-def gps_data_received(data: GpsData) -> None:
-    print(
-        f"lat={data.latitude} "
-        f"lon={data.longitude} "
-        f"speed={data.speed}"
-    )
-
-
-reader = GpsReader(callback=gps_data_received)
-reader.start()
-```
-
-## CLI Test
-
-A simple CLI test application is provided in the `test` directory.
-
-Run the test from the project root:
-
-```bash
-python3 -m hardware_io.gps.test.gps_cli
-```
-
-Press `Ctrl+C` to stop the reader.
-
-## Dependency
-
-The GPS reader requires `gpsd` and the Python GPS bindings.
-
-On Debian or Raspberry Pi OS:
+On Debian, Ubuntu, or Raspberry Pi OS:
 
 ```bash
 sudo apt install gpsd gpsd-clients python3-gps
 ```
 
-The `gpsd` service must be running and configured to use the connected GPS device.
+The Python package uses the distribution-provided `gps` bindings from
+`python3-gps`. No PyPI dependency is required for this module.
+
+## VM USB Setup
+
+Attach the USB GPS receiver to the Linux VM. Confirm that Linux created a serial
+device:
+
+```bash
+ls -l /dev/ttyACM* /dev/ttyUSB*
+```
+
+For the currently tested receiver, the device appears as:
+
+```text
+/dev/ttyACM0
+```
+
+The exact name is not guaranteed. Some receivers appear as `/dev/ttyUSB0`, and
+the number can change when devices are unplugged or reconnected.
+
+Check which group owns the device:
+
+```bash
+ls -l /dev/ttyACM0
+```
+
+If the device belongs to the `dialout` group and your user cannot read it:
+
+```bash
+sudo usermod -aG dialout "$USER"
+```
+
+Log out and back in after changing group membership.
+
+## Component Test: Start gpsd
+
+A component-test helper launches `gpsd` in the foreground without changing the
+system-wide `gpsd` configuration.
+
+From the project root:
+
+```bash
+hardware_io/gps/component_test/start_gpsd.sh /dev/ttyACM0
+```
+
+The device argument is optional. It defaults to `/dev/ttyACM0`:
+
+```bash
+hardware_io/gps/start_gpsd.sh
+```
+
+Keep this terminal open while testing. Press `Ctrl+C` to stop `gpsd`.
+
+This script is intended for component testing and VM development. A deployed
+system should configure and manage `gpsd` through the operating system's service
+configuration.
+
+### Verify gpsd directly
+
+In another terminal, verify that `gpsd` is producing reports:
+
+```bash
+gpspipe -w
+```
+
+For a graphical or terminal client, depending on the installed package:
+
+```bash
+cgps -s
+```
+
+Seeing reports without a position is normal before the receiver acquires a fix.
+For the first fix, place the antenna where it has a clear view of the sky. A fix
+may take several minutes, and indoor testing is frequently an exercise in
+watching expensive silence.
+
+## Component Test: GPS CLI
+
+With `gpsd` running, start the Python CLI from the project root:
+
+```bash
+python3 -m hardware_io.gps.component_test.gps_cli
+```
+
+Before a fix is available, the CLI reports that it is waiting and shows the
+visible and used satellite counts when `gpsd` provides them:
+
+```text
+Waiting for GPS fix... satellites visible=7, used=0, mode=1
+```
+
+After a fix is acquired, the CLI prints the position and fix type:
+
+```text
+3D fix: lat=... lon=... alt=... speed=... track=... satellites_used=5
+```
+
+Press `Ctrl+C` to stop the reader.
+
+## System gpsd Service
+
+If the operating system's `gpsd` service is already configured for the GPS
+receiver, do not run the component-test launcher. Confirm the existing service
+instead:
+
+```bash
+systemctl status gpsd gpsd.socket
+```
+
+Then verify its output:
+
+```bash
+gpspipe -w -n 5
+```

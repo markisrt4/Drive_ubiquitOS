@@ -19,6 +19,13 @@ class GpsData:
     speed: float | None = None
     track: float | None = None
     mode: int | None = None
+    satellites_visible: int | None = None
+    satellites_used: int | None = None
+
+    @property
+    def has_fix(self) -> bool:
+        """Returns True when gpsd reports a 2D or 3D position fix."""
+        return self.mode is not None and self.mode >= 2
 
 
 GpsCallback = Callable[[GpsData], None]
@@ -28,8 +35,9 @@ class GpsReader:
     """
     Reads GPS data from gpsd.
 
-    The reader reports GPS values as they are received. It does not apply
-    application-specific behavior or interpret how the data should be used.
+    The reader reports GPS values as they are received. It does not open or
+    configure the physical GPS device and does not apply application-specific
+    behavior. The physical device is owned and managed by gpsd.
     """
 
     def __init__(
@@ -48,15 +56,15 @@ class GpsReader:
         self._session: gps.gps | None = None
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
+        self._satellites_visible: int | None = None
+        self._satellites_used: int | None = None
 
     @property
     def is_running(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
 
     def open(self) -> None:
-        """
-        Opens a connection to gpsd.
-        """
+        """Opens a connection to gpsd."""
         if self._session is not None:
             return
 
@@ -66,16 +74,10 @@ class GpsReader:
             mode=gps.WATCH_ENABLE | gps.WATCH_NEWSTYLE,
         )
 
-        LOGGER.info(
-            "Connected to gpsd at %s:%s",
-            self._host,
-            self._port,
-        )
+        LOGGER.info("Connected to gpsd at %s:%s", self._host, self._port)
 
     def close(self) -> None:
-        """
-        Closes the gpsd connection.
-        """
+        """Closes the gpsd connection."""
         if self.is_running:
             self.stop()
 
@@ -84,13 +86,10 @@ class GpsReader:
             self._session = None
 
     def start(self, callback: GpsCallback | None = None) -> None:
-        """
-        Starts reading GPS data in a background thread.
-        """
+        """Starts reading GPS data in a background thread."""
         if callback is not None:
             if not callable(callback):
                 raise TypeError("callback must be callable")
-
             self._callback = callback
 
         if self._callback is None:
@@ -112,9 +111,7 @@ class GpsReader:
         LOGGER.info("GPS reader started")
 
     def stop(self) -> None:
-        """
-        Stops the GPS reader.
-        """
+        """Stops the GPS reader."""
         self._stop_event.set()
 
         if self._session is not None:
@@ -129,7 +126,6 @@ class GpsReader:
             self._thread.join(timeout=1.0)
 
         self._thread = None
-
         LOGGER.info("GPS reader stopped")
 
     def _run(self) -> None:
@@ -141,22 +137,27 @@ class GpsReader:
                 if self._stop_event.is_set():
                     break
 
-                if report.get("class") != "TPV":
+                report_class = report.get("class")
+
+                if report_class == "SKY":
+                    self._update_satellite_counts(report)
                     continue
 
-                data = GpsData(
-                    latitude=report.get("lat"),
-                    longitude=report.get("lon"),
-                    altitude=report.get("alt"),
-                    speed=report.get("speed"),
-                    track=report.get("track"),
-                    mode=report.get("mode"),
+                if report_class != "TPV":
+                    continue
+
+                self._publish(
+                    GpsData(
+                        latitude=report.get("lat"),
+                        longitude=report.get("lon"),
+                        altitude=report.get("alt"),
+                        speed=report.get("speed"),
+                        track=report.get("track"),
+                        mode=report.get("mode"),
+                        satellites_visible=self._satellites_visible,
+                        satellites_used=self._satellites_used,
+                    )
                 )
-
-                callback = self._callback
-
-                if callback is not None:
-                    callback(data)
 
         except OSError:
             if not self._stop_event.is_set():
@@ -165,6 +166,18 @@ class GpsReader:
         except Exception:
             if not self._stop_event.is_set():
                 LOGGER.exception("Unexpected GPS reader failure")
+
+    def _update_satellite_counts(self, report: gps.gpsdata) -> None:
+        satellites = report.get("satellites") or []
+        self._satellites_visible = len(satellites)
+        self._satellites_used = sum(
+            1 for satellite in satellites if satellite.get("used", False)
+        )
+
+    def _publish(self, data: GpsData) -> None:
+        callback = self._callback
+        if callback is not None:
+            callback(data)
 
     def __enter__(self) -> GpsReader:
         self.open()

@@ -1,147 +1,104 @@
 from __future__ import annotations
 
 
-class EngineLoadPid:
-    @property
-    def pid(self) -> int:
-        return 0x04
+class _Mode01Pid:
+    mode = 0x01
+    unit = ""
+
+
+class EngineLoadPid(_Mode01Pid):
+    pid = 0x04
+    unit = "%"
 
     def decode(self, data: bytes) -> float | None:
-        if len(data) < 1:
-            return None
-
-        return data[0] * 100.0 / 255.0
+        return None if len(data) < 1 else data[0] * 100.0 / 255.0
 
 
-class EngineRpmPid:
-    @property
-    def pid(self) -> int:
-        return 0x0C
+class EngineRpmPid(_Mode01Pid):
+    pid = 0x0C
+    unit = "rpm"
+
+    def decode(self, data: bytes) -> float | None:
+        return None if len(data) < 2 else ((data[0] << 8) | data[1]) / 4.0
+
+
+class VehicleSpeedPid(_Mode01Pid):
+    pid = 0x0D
+    unit = "km/h"
 
     def decode(self, data: bytes) -> int | None:
-        if len(data) < 2:
-            return None
-
-        return int(((data[0] * 256) + data[1]) / 4)
+        return None if len(data) < 1 else data[0]
 
 
-class VehicleSpeedPid:
-    @property
-    def pid(self) -> int:
-        return 0x0D
-
-    def decode(self, data: bytes) -> float | None:
-        if len(data) < 1:
-            return None
-
-        return data[0] * 0.621371
-
-
-class IntakeManifoldPressurePid:
-    @property
-    def pid(self) -> int:
-        return 0x0B
+class IntakeManifoldPressurePid(_Mode01Pid):
+    pid = 0x0B
+    unit = "kPa"
 
     def decode(self, data: bytes) -> int | None:
-        if len(data) < 1:
-            return None
-
-        return data[0]
+        return None if len(data) < 1 else data[0]
 
 
-class BarometricPressurePid:
-    @property
-    def pid(self) -> int:
-        return 0x33
+class BarometricPressurePid(_Mode01Pid):
+    pid = 0x33
+    unit = "kPa"
 
     def decode(self, data: bytes) -> int | None:
-        if len(data) < 1:
-            return None
-
-        return data[0]
+        return None if len(data) < 1 else data[0]
 
 
-class ThrottlePositionPid:
-    @property
-    def pid(self) -> int:
-        return 0x11
+class ThrottlePositionPid(_Mode01Pid):
+    pid = 0x11
+    unit = "%"
 
     def decode(self, data: bytes) -> float | None:
-        if len(data) < 1:
-            return None
-
-        return data[0] * 100.0 / 255.0
+        return None if len(data) < 1 else data[0] * 100.0 / 255.0
 
 
-class AcceleratorPedalPositionPid:
-    @property
-    def pid(self) -> int:
-        return 0x49
+class AcceleratorPedalPositionPid(_Mode01Pid):
+    """Relative accelerator pedal position D, mode 01 PID 49."""
+
+    pid = 0x49
+    unit = "%"
 
     def decode(self, data: bytes) -> float | None:
-        if len(data) < 1:
-            return None
-
-        return data[0] * 100.0 / 255.0
+        return None if len(data) < 1 else data[0] * 100.0 / 255.0
 
 
-class CoolantTempPid:
-    @property
-    def pid(self) -> int:
-        return 0x05
+class CoolantTempPid(_Mode01Pid):
+    pid = 0x05
+    unit = "°C"
 
-    def decode(self, data: bytes) -> float | None:
-        if len(data) < 1:
-            return None
-
-        temp_c = data[0] - 40
-        return temp_c * 9.0 / 5.0 + 32.0
+    def decode(self, data: bytes) -> int | None:
+        return None if len(data) < 1 else data[0] - 40
 
 
-class IntakeAirTempPid:
-    @property
-    def pid(self) -> int:
-        return 0x0F
+class IntakeAirTempPid(_Mode01Pid):
+    pid = 0x0F
+    unit = "°C"
 
-    def decode(self, data: bytes) -> float | None:
-        if len(data) < 1:
-            return None
-
-        temp_c = data[0] - 40
-        return temp_c * 9.0 / 5.0 + 32.0
+    def decode(self, data: bytes) -> int | None:
+        return None if len(data) < 1 else data[0] - 40
 
 
-class MassAirFlowPid:
-    @property
-    def pid(self) -> int:
-        return 0x10
+class MassAirFlowPid(_Mode01Pid):
+    pid = 0x10
+    unit = "g/s"
 
     def decode(self, data: bytes) -> float | None:
-        if len(data) < 2:
-            return None
-
-        return ((data[0] * 256) + data[1]) / 100.0
+        return None if len(data) < 2 else ((data[0] << 8) | data[1]) / 100.0
 
 
-class FuelLevelPid:
-    @property
-    def pid(self) -> int:
-        return 0x2F
+class FuelLevelPid(_Mode01Pid):
+    pid = 0x2F
+    unit = "%"
 
     def decode(self, data: bytes) -> float | None:
-        if len(data) < 1:
-            return None
-
-        return data[0] * 100.0 / 255.0
+        return None if len(data) < 1 else data[0] * 100.0 / 255.0
 
 
-class ControlModuleVoltagePid:
-    @property
-    def pid(self) -> int:
-        return 0x42
+class ControlModuleVoltagePid(_Mode01Pid):
+    pid = 0x42
+    unit = "V"
 
     def decode(self, data: bytes) -> float | None:
-        if len(data) < 2:
-            return None
-
-        return ((data[0] * 256) + data[1]) / 1000.0
+        return None if len(data) < 2 else ((data[0] << 8) | data[1]) / 1000.0

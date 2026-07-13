@@ -7,10 +7,9 @@ VENV_DIR="${VENV_DIR:-$PROJECT_DIR/venv}"
 DISPLAY_NUM="${DISPLAY_NUM:-2}"
 GEOMETRY="${GEOMETRY:-1280x720}"
 DEPTH="${DEPTH:-24}"
+GPS_DEVICE="${GPS_DEVICE:-/dev/ttyACM0}"
 
 RUNTIME_SCRIPT="$PROJECT_DIR/scripts/start_vnc_server.sh"
-SERVICE_DIR="$HOME/.config/systemd/user"
-SERVICE_FILE="$SERVICE_DIR/carui-vnc.service"
 
 install_if_available() {
   local pkg="$1"
@@ -88,12 +87,14 @@ python -m pip install \
   endev \
   RPi.GPIO \
   adafruit-blinka \
-  adafruit-circuitpython-seesaw
+  adafruit-circuitpython-seesaw \
+  Pillow
 
 deactivate
 
 echo "[*] Granting user permissions..."
-sudo usermod -aG input "$USER"
+sudo usermod -aG input   "$USER"
+sudo usermod -aG dialout "$USER"
 
 
 echo "[*] Setting up VNC..."
@@ -132,31 +133,11 @@ chmod +x "$HOME/.vnc/xstartup"
 echo "[*] Installing VNC runtime script..."
 chmod +x "$RUNTIME_SCRIPT"
 
-echo "[*] Creating systemd user service..."
+echo "[*] Installing VNC systemd service..."
+bash "$PROJECT_DIR/scripts/systemd/install_vnc_systemd.sh"
 
-mkdir -p "$SERVICE_DIR"
-
-cat > "$SERVICE_FILE" <<EOF
-[Unit]
-Description=CarUI VNC Server
-After=network-online.target
-
-[Service]
-Type=forking
-ExecStart=$RUNTIME_SCRIPT $DISPLAY_NUM $GEOMETRY $DEPTH
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=default.target
-EOF
-
-echo "[*] Enabling user service startup at boot..."
-sudo loginctl enable-linger "$USER"
-
-systemctl --user daemon-reload
-systemctl --user enable carui-vnc.service
-systemctl --user restart carui-vnc.service
+echo "[*] Installing GPS systemd service..."
+sudo bash "$PROJECT_DIR/scripts/systemd/install_gpsd_systemd.sh" "$GPS_DEVICE"
 
 echo
 echo "[+] Host setup complete."
