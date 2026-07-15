@@ -1,119 +1,118 @@
+from __future__ import annotations
+
 import subprocess
 import time
-from typing import Callable, Optional
+from pathlib import Path
 
-from apps.launchers.app_launcher_if import AppLauncherIf
+from apps.launchers.app_launcher_if import (
+    AppLauncherIf,
+    StatusCallback,
+)
 from apps.launchers.browser_launcher import BrowserKioskLauncher
 from apps.launchers.process_manager import (
     close_matching_display_apps,
     is_process_running,
 )
-
 from common.logging.logging_paths import logging_file_path
 
+
 class ADSBLauncher(AppLauncherIf):
+    """Launch readsb and the tar1090 browser dashboard."""
+
     def __init__(
         self,
+        *,
         url: str = "http://127.0.0.1/tar1090",
-        readsb_log: Optional[str] = None,
-        browser_log_file: Optional[str] = None,
+        browser_log_file: str | Path | None = None,
         close_existing_display_apps: bool = False,
         resource_manager=None,
         owner_name: str = "adsb",
-    ):
+        readsb_service: str = "readsb",
+        startup_timeout_seconds: float = 5.0,
+    ) -> None:
         self.url = url
-        self.readsb_log = self.log_file = (
-            readsb_log
-            or logging_file_path(
-                "carsdr",
-                "carsdr-readsb.log",
-            )
-        )
         self.close_existing_display_apps = close_existing_display_apps
         self.resource_manager = resource_manager
         self.owner_name = owner_name
-
+        self.readsb_service = readsb_service
+        self.startup_timeout_seconds = startup_timeout_seconds
         self.browser = BrowserKioskLauncher(
             url=url,
             process_pattern="127.0.0.1/tar1090",
             log_file=(
                 browser_log_file
-                or app_logging_file(
-                    "carsdr",
-                    "carsdr-adsb-browser.log",
+                or logging_file_path(
+                    "drive-ubiquitos",
+                    "adsb-browser.log",
                 )
             ),
         )
 
-        self._readsb_proc: Optional[subprocess.Popen] = None
-
-    def services_running(self) -> bool:
-        return is_process_running("readsb") and is_process_running("tar1090")
-
     def is_running(self) -> bool:
         return self.browser.is_running()
 
-    def launch(self, remote_display=":2", set_status=None) -> None:
-        if set_status:
-            set_status("Launching ADS-B dashboard...")
+    def launch(
+        self,
+        remote_display: str,
+        set_status: StatusCallback = None,
+    ) -> None:
+        _status(set_status, "Launching ADS-B dashboard...")
 
-        if self.resource_manager:
+        if self.resource_manager is not None:
             self.resource_manager.acquire(
                 self.owner_name,
                 force=True,
                 set_status=set_status,
             )
 
-        close_matching_display_apps(
-            display=remote_display,
-            patterns=[
-                "sdrpp",
-                "sdr\\+\\+",
-            ],
+        if self.close_existing_display_apps:
+            close_matching_display_apps(
+                display=remote_display,
+                patterns=("sdrpp", "sdr\\+\\+"),
+            )
+
+        subprocess.run(
+            ["sudo", "systemctl", "start", self.readsb_service],
+            check=False,
         )
 
-        subprocess.run(["sudo", "systemctl", "start", "readsb"], check=False)
+        if not self._wait_for_readsb():
+            raise RuntimeError(
+                f"{self.readsb_service} failed to start"
+            )
 
-        if not self.wait_for_readsb():
-            if set_status:
-                set_status("readsb failed to start")
-            return
+        self.browser.launch(remote_display, set_status)
+        _status(set_status, "ADS-B dashboard launched")
 
-        self.browser.launch(
-            remote_display=remote_display,
-            set_status=set_status,
-        )
-
-        if set_status:
-            set_status("ADS-B dashboard launched")  
-
-    def stop(self, set_status=None) -> None:
-        self.browser.stop(set_status=None)
-
-        if set_status:
-            set_status("ADS-B dashboard closed")
+    def stop(
+        self,
+        remote_display: str,
+        set_status: StatusCallback = None,
+    ) -> None:
+        self.browser.stop(remote_display, None)
+        _status(set_status, "ADS-B dashboard closed")
 
     def toggle(
         self,
-        remote_display: str = ":2",
-        set_status: Optional[Callable[[str], None]] = None,
+        remote_display: str,
+        set_status: StatusCallback = None,
     ) -> bool:
-        if self.browser.is_running():
-            self.stop(set_status=set_status)
+        if self.is_running():
+            self.stop(remote_display, set_status)
             return False
 
-        self.launch(
-            remote_display=remote_display,
-            set_status=set_status,
-        )
+        self.launch(remote_display, set_status)
         return True
-    
-    def wait_for_readsb(self, timeout_seconds: float = 5.0) -> bool:
-        deadline = time.time() + timeout_seconds
 
-        while time.time() < deadline:
-            if is_process_running("readsb"):
+    def _wait_for_readsb(self) -> bool:
+        deadline = time.monotonic() + self.startup_timeout_seconds
+        while time.monotonic() < deadline:
+            if is_process_running(self.readsb_service):
                 return True
             time.sleep(0.25)
-
         return False
+
+
+def _status(callback: StatusCallback, message: str) -> None:
+    if callback is not None:
+        callback(message)

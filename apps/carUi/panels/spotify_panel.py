@@ -1,202 +1,312 @@
-import tkinter as tk
+from __future__ import annotations
 
-from apps.common.uiTheme import COLORS, FONTS
-from modules.media.spotify.spotify_controller import SpotifyController
-from modules.media.spotify.spotify_state      import SpotifyState
+import tkinter as tk
+from tkinter import TclError
+from typing import Any
+
+from controllers.spotify.spotify_web_api_controller import SpotifyWebApiController
+from controllers.spotify.spotify_state import SpotifyState
+
+
+
+
+def format_duration_ms(value: int | None) -> str:
+    if value is None:
+        return "--:--"
+
+    total_seconds = max(0, value // 1000)
+    minutes = total_seconds // 60
+    seconds = total_seconds % 60
+    return f"{minutes}:{seconds:02d}"
 
 
 class SpotifyPanel(tk.Frame):
+    """Spotify playback controls backed by the Spotify controller."""
+
     def __init__(
         self,
         parent: tk.Widget,
-        controller: SpotifyController,
-        on_back,
-        compact_ui: bool = False,
+        *,
+        controller: SpotifyWebApiController,
+        theme: dict[str, Any],
     ) -> None:
-        super().__init__(parent, bg=COLORS["app_bg"])
-
         self._controller = controller
-        self._on_back = on_back
-        self._compact_ui = compact_ui
-        self._refresh_job: str | None = None
+        self._theme = theme
+        self._colors = theme["colors"]
+        self._layout = theme["layout"]
+        self._style = theme["profiles"]["default"]
 
-        self._track_var = tk.StringVar(value="--")
-        self._artist_var = tk.StringVar(value="--")
-        self._album_var = tk.StringVar(value="--")
-        self._device_var = tk.StringVar(value="Device: --")
-        self._status_var = tk.StringVar(value="Spotify")
-        self._progress_var = tk.StringVar(value="--:-- / --:--")
-        self._volume_var = tk.StringVar(value="Volume: --%")
+        super().__init__(parent, bg=self._colors["background"])
+
+        self._refresh_job: str | None = None
+        self._track_var = tk.StringVar(value=self._layout["empty_value"])
+        self._artist_var = tk.StringVar(value=self._layout["empty_value"])
+        self._album_var = tk.StringVar(value=self._layout["empty_value"])
+        self._device_var = tk.StringVar(
+            value=self._layout["empty_device_text"]
+        )
+        self._status_var = tk.StringVar(
+            value=self._layout["initial_status"]
+        )
+        self._progress_var = tk.StringVar(
+            value=self._layout["empty_progress_text"]
+        )
+        self._volume_var = tk.StringVar(
+            value=self._layout["empty_volume_text"]
+        )
 
         self._build_ui()
 
     def start(self) -> None:
+        self.stop()
         self._refresh()
 
     def stop(self) -> None:
-        if self._refresh_job is not None:
-            self.after_cancel(self._refresh_job)
-            self._refresh_job = None
-
-    def _on_progress_click(self, event) -> None:
-        state = self._controller.current_state()
-
-        if state.duration_ms is None or state.duration_ms <= 0:
+        if self._refresh_job is None:
             return
-
-        width = max(1, self._progress_canvas.winfo_width())
-        ratio = max(0.0, min(1.0, event.x / width))
-        position_ms = int(state.duration_ms * ratio)
 
         try:
-            self._controller.seek_to_position_ms(position_ms)
-        except Exception as ex:
-            self._status_var.set("Seek failed")
-            print(f"[SpotifyPanel] Seek failed: {ex}")
-            return
+            self.after_cancel(self._refresh_job)
+        except TclError:
+            pass
 
-        self._apply_state(self._controller.current_state())
+        self._refresh_job = None
+
+    def destroy(self) -> None:
+        self.stop()
+        super().destroy()
 
     def _build_ui(self) -> None:
-        pad = 8 if self._compact_ui else 14
-
-        header = tk.Frame(self, bg=COLORS["app_bg"])
-        header.pack(fill="x", padx=pad, pady=(pad, 4))
+        header = tk.Frame(self, bg=self._colors["background"])
+        header.pack(
+            fill=self._layout["fill_horizontal"],
+            padx=self._style["outer_pad"],
+            pady=self._style["header_pady"],
+        )
 
         tk.Label(
             header,
-            text="SPOTIFY",
-            bg=COLORS["app_bg"],
-            fg=COLORS["tile_title"],
-            font=FONTS["tile_title"],
-            anchor="w",
-        ).pack(side="left")
+            text=self._layout["title"],
+            bg=self._colors["background"],
+            fg=self._colors["title"],
+            font=self._style["header_title_font"],
+            anchor=self._layout["left_anchor"],
+        ).pack(side=self._layout["left_side"])
 
         tk.Label(
             header,
             textvariable=self._status_var,
-            bg=COLORS["app_bg"],
-            fg=COLORS["status_telemetry_value"],
-            font=FONTS["status"],
-            anchor="e",
-        ).pack(side="right")
+            bg=self._colors["background"],
+            fg=self._colors["status"],
+            font=self._style["status_font"],
+            anchor=self._layout["right_anchor"],
+        ).pack(side=self._layout["right_side"])
 
         card = tk.Frame(
             self,
-            bg=COLORS["tile_bg"],
-            highlightthickness=2,
-            highlightbackground=COLORS["tile_border"],
+            bg=self._colors["card_background"],
+            highlightthickness=self._layout["card_border_width"],
+            highlightbackground=self._colors["card_border"],
         )
-        card.pack(fill="both", expand=True, padx=pad, pady=pad)
+        card.pack(
+            fill=self._layout["fill_both"],
+            expand=True,
+            padx=self._style["outer_pad"],
+            pady=self._style["outer_pad"],
+        )
 
-        tk.Label(
+        self._label(
             card,
-            textvariable=self._track_var,
-            bg=COLORS["tile_bg"],
-            fg=COLORS["tile_title"],
-            font=(FONTS["tile_title"][0], 26 if self._compact_ui else 34, "bold"),
-            anchor="center",
-            wraplength=700,
-        ).pack(fill="x", padx=14, pady=(18, 4))
+            variable=self._track_var,
+            foreground=self._colors["title"],
+            font=self._style["track_font"],
+            wraplength=self._style["text_wrap"],
+        ).pack(
+            fill=self._layout["fill_horizontal"],
+            padx=self._style["text_padx"],
+            pady=self._style["track_pady"],
+        )
 
-        tk.Label(
+        self._label(
             card,
-            textvariable=self._artist_var,
-            bg=COLORS["tile_bg"],
-            fg=COLORS["tile_subtitle"],
-            font=(FONTS["tile_subtitle"][0], 16 if self._compact_ui else 20),
-            anchor="center",
-            wraplength=700,
-        ).pack(fill="x", padx=14)
+            variable=self._artist_var,
+            foreground=self._colors["subtitle"],
+            font=self._style["artist_font"],
+            wraplength=self._style["text_wrap"],
+        ).pack(
+            fill=self._layout["fill_horizontal"],
+            padx=self._style["text_padx"],
+        )
 
-        tk.Label(
+        self._label(
             card,
-            textvariable=self._album_var,
-            bg=COLORS["tile_bg"],
-            fg=COLORS["tile_detail"],
-            font=FONTS["tile_detail"],
-            anchor="center",
-            wraplength=700,
-        ).pack(fill="x", padx=14, pady=(2, 10))
+            variable=self._album_var,
+            foreground=self._colors["detail"],
+            font=self._style["detail_font"],
+            wraplength=self._style["text_wrap"],
+        ).pack(
+            fill=self._layout["fill_horizontal"],
+            padx=self._style["text_padx"],
+            pady=self._style["album_pady"],
+        )
 
         self._progress_canvas = tk.Canvas(
             card,
-            height=18,
-            bg=COLORS["tile_bg"],
-            highlightthickness=0,
+            height=self._style["progress_canvas_height"],
+            bg=self._colors["card_background"],
+            highlightthickness=self._layout["zero"],
         )
-        self._progress_canvas.pack(fill="x", padx=28, pady=(8, 2))
+        self._progress_canvas.pack(
+            fill=self._layout["fill_horizontal"],
+            padx=self._style["progress_padx"],
+            pady=self._style["progress_canvas_pady"],
+        )
+        self._progress_canvas.bind(
+            self._layout["click_event"],
+            self._on_progress_click,
+        )
+        self._progress_canvas.bind(
+            self._layout["drag_event"],
+            self._on_progress_click,
+        )
+        self._progress_canvas.bind(
+            self._layout["configure_event"],
+            lambda _event: self._redraw_current_progress(),
+        )
 
-        self._progress_canvas.bind("<Button-1>", self._on_progress_click)
-        self._progress_canvas.bind("<B1-Motion>", self._on_progress_click)
-
-        tk.Label(
+        self._label(
             card,
-            textvariable=self._progress_var,
-            bg=COLORS["tile_bg"],
-            fg=COLORS["tile_detail"],
-            font=FONTS["tile_detail"],
-            anchor="center",
-        ).pack(fill="x", padx=14, pady=(0, 10))
+            variable=self._progress_var,
+            foreground=self._colors["detail"],
+            font=self._style["detail_font"],
+        ).pack(
+            fill=self._layout["fill_horizontal"],
+            padx=self._style["text_padx"],
+            pady=self._style["progress_text_pady"],
+        )
 
-        controls = tk.Frame(card, bg=COLORS["tile_bg"])
-        controls.pack(pady=(4, 12))
+        controls = tk.Frame(card, bg=self._colors["card_background"])
+        controls.pack(pady=self._style["controls_pady"])
 
         self._button(
             controls,
-            "⏮",
+            self._layout["previous_text"],
             self._previous,
-            width=5,
-        ).pack(side="left", padx=8)
+            width=self._style["transport_button_width"],
+        ).pack(
+            side=self._layout["left_side"],
+            padx=self._style["transport_button_gap"],
+        )
 
         self._play_button = self._button(
             controls,
-            "⏯",
+            self._layout["play_pause_text"],
             self._play_pause,
-            width=5,
+            width=self._style["transport_button_width"],
         )
-        self._play_button.pack(side="left", padx=8)
+        self._play_button.pack(
+            side=self._layout["left_side"],
+            padx=self._style["transport_button_gap"],
+        )
 
         self._button(
             controls,
-            "⏭",
+            self._layout["next_text"],
             self._next,
-            width=5,
-        ).pack(side="left", padx=8)
+            width=self._style["transport_button_width"],
+        ).pack(
+            side=self._layout["left_side"],
+            padx=self._style["transport_button_gap"],
+        )
 
-        bottom = tk.Frame(card, bg=COLORS["tile_bg"])
-        bottom.pack(fill="x", padx=18, pady=(4, 12))
+        bottom = tk.Frame(card, bg=self._colors["card_background"])
+        bottom.pack(
+            fill=self._layout["fill_horizontal"],
+            padx=self._style["bottom_padx"],
+            pady=self._style["bottom_pady"],
+        )
 
-        tk.Label(
+        self._label(
             bottom,
-            textvariable=self._device_var,
-            bg=COLORS["tile_bg"],
-            fg=COLORS["tile_subtitle"],
-            font=FONTS["status"],
-            anchor="w",
-        ).pack(side="left", fill="x", expand=True)
+            variable=self._device_var,
+            foreground=self._colors["subtitle"],
+            font=self._style["status_font"],
+            anchor=self._layout["left_anchor"],
+        ).pack(
+            side=self._layout["left_side"],
+            fill=self._layout["fill_horizontal"],
+            expand=True,
+        )
 
-        vol_frame = tk.Frame(bottom, bg=COLORS["tile_bg"])
-        vol_frame.pack(side="right")
+        volume_frame = tk.Frame(
+            bottom,
+            bg=self._colors["card_background"],
+        )
+        volume_frame.pack(side=self._layout["right_side"])
 
-        self._button(vol_frame, "−", self._volume_down, width=3).pack(side="left", padx=3)
+        self._button(
+            volume_frame,
+            self._layout["volume_down_text"],
+            self._volume_down,
+            width=self._style["volume_button_width"],
+        ).pack(
+            side=self._layout["left_side"],
+            padx=self._style["volume_button_gap"],
+        )
 
-        tk.Label(
-            vol_frame,
-            textvariable=self._volume_var,
-            bg=COLORS["tile_bg"],
-            fg=COLORS["tile_subtitle"],
-            font=FONTS["status"],
-            width=13,
-        ).pack(side="left", padx=3)
+        self._label(
+            volume_frame,
+            variable=self._volume_var,
+            foreground=self._colors["subtitle"],
+            font=self._style["status_font"],
+            width=self._style["volume_text_width"],
+        ).pack(
+            side=self._layout["left_side"],
+            padx=self._style["volume_button_gap"],
+        )
 
-        self._button(vol_frame, "+", self._volume_up, width=3).pack(side="left", padx=3)
+        self._button(
+            volume_frame,
+            self._layout["volume_up_text"],
+            self._volume_up,
+            width=self._style["volume_button_width"],
+        ).pack(
+            side=self._layout["left_side"],
+            padx=self._style["volume_button_gap"],
+        )
+
+    def _label(
+        self,
+        parent: tk.Widget,
+        *,
+        variable: tk.StringVar,
+        foreground: str,
+        font: Any,
+        anchor: str | None = None,
+        wraplength: int | None = None,
+        width: int | None = None,
+    ) -> tk.Label:
+        options: dict[str, Any] = {
+            "textvariable": variable,
+            "bg": self._colors["card_background"],
+            "fg": foreground,
+            "font": font,
+            "anchor": anchor or self._layout["center_anchor"],
+        }
+
+        if wraplength is not None:
+            options["wraplength"] = wraplength
+        if width is not None:
+            options["width"] = width
+
+        return tk.Label(parent, **options)
 
     def _button(
         self,
         parent: tk.Widget,
         text: str,
         command,
+        *,
         width: int,
     ) -> tk.Button:
         return tk.Button(
@@ -204,120 +314,200 @@ class SpotifyPanel(tk.Frame):
             text=text,
             command=command,
             width=width,
-            bg=COLORS["volume_button_bg"],
-            fg=COLORS["volume_button_fg"],
-            activebackground=COLORS["top_bar_active"],
-            activeforeground=COLORS["top_bar_fg"],
-            font=FONTS["volume_button"],
-            bd=0,
-            relief="flat",
-            cursor="hand2",
+            bg=self._colors["button_background"],
+            fg=self._colors["button_foreground"],
+            activebackground=self._colors["button_active_background"],
+            activeforeground=self._colors["button_active_foreground"],
+            font=self._style["button_font"],
+            bd=self._layout["zero"],
+            relief=self._layout["flat_relief"],
+            cursor=self._layout["cursor"],
         )
 
     def _refresh(self) -> None:
-        state = self._controller.current_state()
-        self._apply_state(state)
-        self._refresh_job = self.after(1000, self._refresh)
+        try:
+            state = self._controller.current_state()
+        except Exception as exc:
+            self._status_var.set(f"Spotify error: {exc}")
+        else:
+            self._apply_state(state)
+
+        self._refresh_job = self.after(
+            self._layout["refresh_interval_ms"],
+            self._refresh,
+        )
 
     def _apply_state(self, state: SpotifyState) -> None:
+        empty = self._layout["empty_value"]
+
         self._status_var.set(state.status_message)
-        self._track_var.set(state.track_name or "--")
-        self._artist_var.set(state.artist_name or "--")
-        self._album_var.set(state.album_name or "--")
-        self._device_var.set(f"Device: {state.device_name or '--'}")
+        self._track_var.set(state.track_name or empty)
+        self._artist_var.set(state.artist_name or empty)
+        self._album_var.set(state.album_name or empty)
+        self._device_var.set(
+            self._layout["device_template"].format(
+                device=state.device_name or empty
+            )
+        )
 
-        if state.volume_percent is None:
-            self._volume_var.set("Volume: --%")
-        else:
-            self._volume_var.set(f"Volume: {state.volume_percent}%")
+        volume = (
+            empty
+            if state.volume_percent is None
+            else str(state.volume_percent)
+        )
+        self._volume_var.set(
+            self._layout["volume_template"].format(volume=volume)
+        )
 
-        if state.is_playing:
-            self._play_button.configure(text="⏸")
-        else:
-            self._play_button.configure(text="▶")
+        self._play_button.configure(
+            text=(
+                self._layout["pause_text"]
+                if state.is_playing
+                else self._layout["play_text"]
+            )
+        )
 
         self._progress_var.set(
-            f"{self._format_ms(state.progress_ms)} / {self._format_ms(state.duration_ms)}"
+            self._layout["progress_template"].format(
+                progress=format_duration_ms(state.progress_ms),
+                duration=format_duration_ms(state.duration_ms),
+            )
         )
         self._draw_progress(state.progress_percent)
 
+    def _on_progress_click(self, event: tk.Event) -> None:
+        try:
+            state = self._controller.current_state()
+        except Exception as exc:
+            self._status_var.set(f"Spotify error: {exc}")
+            return
+
+        if state.duration_ms is None or state.duration_ms <= 0:
+            return
+
+        width = max(
+            self._layout["minimum_canvas_width"],
+            self._progress_canvas.winfo_width(),
+        )
+        ratio = max(
+            self._layout["progress_min_ratio"],
+            min(
+                self._layout["progress_max_ratio"],
+                event.x / width,
+            ),
+        )
+        position_ms = int(state.duration_ms * ratio)
+
+        self._run_action(
+            lambda: self._controller.seek_to_position_ms(position_ms),
+            failure_message="Seek failed",
+        )
+
+    def _play_pause(self) -> None:
+        self._run_action(
+            self._controller.play_pause,
+            failure_message="Play/pause failed",
+        )
+
+    def _next(self) -> None:
+        self._run_action(
+            self._controller.next_track,
+            failure_message="Next track failed",
+        )
+
+    def _previous(self) -> None:
+        self._run_action(
+            self._controller.previous_track,
+            failure_message="Previous track failed",
+        )
+
+    def _volume_up(self) -> None:
+        self._adjust_volume(self._layout["volume_step"])
+
+    def _volume_down(self) -> None:
+        self._adjust_volume(-self._layout["volume_step"])
+
+    def _adjust_volume(self, delta: int) -> None:
+        try:
+            state = self._controller.current_state()
+            current = (
+                state.volume_percent
+                if state.volume_percent is not None
+                else self._layout["default_volume"]
+            )
+            target = max(
+                self._layout["minimum_volume"],
+                min(
+                    self._layout["maximum_volume"],
+                    current + delta,
+                ),
+            )
+            self._controller.set_volume_percent(target)
+            self._apply_state(self._controller.current_state())
+        except Exception as exc:
+            self._status_var.set(
+                self._layout["volume_not_supported_text"]
+            )
+            print(f"[SpotifyPanel] Volume adjustment failed: {exc}")
+
+    def _run_action(
+        self,
+        action,
+        *,
+        failure_message: str,
+    ) -> None:
+        try:
+            action()
+            self._apply_state(self._controller.current_state())
+        except Exception as exc:
+            self._status_var.set(failure_message)
+            print(f"[SpotifyPanel] {failure_message}: {exc}")
+
+    def _redraw_current_progress(self) -> None:
+        try:
+            state = self._controller.current_state()
+        except Exception:
+            return
+
+        self._draw_progress(state.progress_percent)
+
     def _draw_progress(self, progress_percent: float | None) -> None:
-        self._progress_canvas.delete("all")
+        self._progress_canvas.delete(self._layout["canvas_all_tag"])
 
-        width = self._progress_canvas.winfo_width()
-        height = 18
-
-        if width <= 1:
-            width = 500
+        width = max(
+            self._layout["fallback_canvas_width"],
+            self._progress_canvas.winfo_width(),
+        )
 
         self._progress_canvas.create_rectangle(
-            0,
-            6,
+            self._layout["progress_left"],
+            self._style["progress_track_top"],
             width,
-            12,
-            fill=COLORS["tile_border"],
-            outline="",
+            self._style["progress_track_bottom"],
+            fill=self._colors["progress_track"],
+            outline=self._layout["empty_outline"],
         )
 
         if progress_percent is None:
             return
 
-        fill_width = width * max(0.0, min(100.0, progress_percent)) / 100.0
-
-        self._progress_canvas.create_rectangle(
-            0,
-            6,
-            fill_width,
-            12,
-            fill=COLORS["tile_accent"],
-            outline="",
+        fill_width = (
+            width
+            * max(
+                self._layout["minimum_progress_percent"],
+                min(
+                    self._layout["maximum_progress_percent"],
+                    progress_percent,
+                ),
+            )
+            / self._layout["maximum_progress_percent"]
         )
 
-    def _play_pause(self) -> None:
-        self._controller.play_pause()
-        self._apply_state(self._controller.current_state())
-
-    def _next(self) -> None:
-        self._controller.next_track()
-        self._apply_state(self._controller.current_state())
-
-    def _previous(self) -> None:
-        self._controller.previous_track()
-        self._apply_state(self._controller.current_state())
-
-    def _volume_up(self) -> None:
-        state = self._controller.current_state()
-        current = state.volume_percent if state.volume_percent is not None else 50
-
-        try:
-            self._controller.set_volume_percent(current + 5)
-        except Exception as ex:
-            self._status_var.set("Volume control not supported")
-            print(f"[SpotifyPanel] Volume up failed: {ex}")
-            return
-
-        self._apply_state(self._controller.current_state())
-
-
-    def _volume_down(self) -> None:
-        state = self._controller.current_state()
-        current = state.volume_percent if state.volume_percent is not None else 50
-
-        try:
-            self._controller.set_volume_percent(current - 5)
-        except Exception as ex:
-            self._status_var.set("Volume control not supported")
-            print(f"[SpotifyPanel] Volume down failed: {ex}")
-            return
-
-        self._apply_state(self._controller.current_state())
-
-    @staticmethod
-    def _format_ms(value: int | None) -> str:
-        if value is None:
-            return "--:--"
-
-        total_seconds = max(0, value // 1000)
-        minutes = total_seconds // 60
-        seconds = total_seconds % 60
-        return f"{minutes}:{seconds:02d}"
+        self._progress_canvas.create_rectangle(
+            self._layout["progress_left"],
+            self._style["progress_track_top"],
+            fill_width,
+            self._style["progress_track_bottom"],
+            fill=self._colors["progress_fill"],
+            outline=self._layout["empty_outline"],
+        )

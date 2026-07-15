@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 
 
@@ -16,33 +16,64 @@ class RgbColor:
             ("green", self.green),
             ("blue", self.blue),
         ):
+            if not isinstance(value, int) or isinstance(value, bool):
+                raise TypeError(f"{name} must be an integer")
             if not 0 <= value <= 255:
                 raise ValueError(f"{name} must be in range 0..255")
 
 
+class CustomPatternMode(Enum):
+    GRADUAL = 0
+    FADE = 1
+    FORWARD = 2
+    FLASH = 3
+    OFF = 4
+    PULSE = 5
+    FLOW = 6
+    HOP = 7
+
+
 @dataclass(frozen=True, slots=True)
 class LightingState:
-    power_enabled: bool
-    color: RgbColor
-    brightness_percent: int
-    pattern_index: int
-    music_mode: int
+    connected: bool = False
+    power_enabled: bool = False
+    color: RgbColor = RgbColor(255, 255, 255)
+    brightness_percent: int = 100
+    color_temperature_percent: int = 50
+    pattern_index: int = 0
+    music_mode: int = 0
+    custom_pattern_mode: CustomPatternMode = CustomPatternMode.OFF
+    custom_pattern_forward: bool = True
 
     def __post_init__(self) -> None:
-        if not 0 <= self.brightness_percent <= 100:
-            raise ValueError("brightness_percent must be in range 0..100")
-        if not 0 <= self.pattern_index <= 210:
-            raise ValueError("pattern_index must be in range 0..210")
-        if not 0 <= self.music_mode <= 255:
-            raise ValueError("music_mode must be in range 0..255")
+        _validate_range(
+            "brightness_percent",
+            self.brightness_percent,
+            0,
+            100,
+        )
+        _validate_range(
+            "color_temperature_percent",
+            self.color_temperature_percent,
+            0,
+            100,
+        )
+        _validate_range("pattern_index", self.pattern_index, 0, 210)
+        _validate_range("music_mode", self.music_mode, 0, 255)
+
+    def updated(self, **changes: object) -> "LightingState":
+        return replace(self, **changes)
 
 
-class CustomPatternMode(Enum):
-    GRADUAL = 0     # GD
-    FADE = 1        # FD
-    FORWARD = 2     # FW
-    FLASH = 3       # FS
-    OFF = 4         # AC
-    PULSE = 5       # PU
-    FLOW = 6        # FL
-    HOP = 7         # HO
+def _validate_range(
+    name: str,
+    value: int,
+    minimum: int,
+    maximum: int,
+) -> None:
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise TypeError(f"{name} must be an integer")
+    if not minimum <= value <= maximum:
+        raise ValueError(
+            f"{name} must be in range {minimum}..{maximum}"
+        )

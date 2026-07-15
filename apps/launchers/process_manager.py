@@ -1,119 +1,117 @@
+from __future__ import annotations
+
 import os
 import signal
 import subprocess
 import time
-from typing import Iterable, Optional
+from collections.abc import Iterable
+from dataclasses import dataclass
+from pathlib import Path
 
 
-DEFAULT_DISPLAY_APP_PATTERNS = [
+DEFAULT_DISPLAY_APP_PATTERNS = (
     "sdrpp",
     "sdr\\+\\+",
     "chromium",
     "chromium-browser",
     "streamlit",
-]
+)
 
-
-PROTECTED_PROCESS_PATTERNS = [
+PROTECTED_PROCESS_PATTERNS = (
     "vncserver",
     "tigervncserver",
     "Xtigervnc",
     "Xvnc",
     "xstartup",
     "openbox",
-]
+)
 
 
-def _process_display(pid: int) -> Optional[str]:
+@dataclass(frozen=True, slots=True)
+class ProcessInfo:
+    pid: int
+    command_line: str
+    display: str | None
+
+
+def find_matching_processes(pattern: str) -> tuple[ProcessInfo, ...]:
+    result = subprocess.run(
+        ["pgrep", "-f", pattern],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        check=False,
+    )
+
+    matches: list[ProcessInfo] = []
+    for pid_text in result.stdout.splitlines():
+        if not pid_text.strip().isdigit():
+            continue
+
+        pid = int(pid_text)
+        command_line = _process_command_line(pid)
+        if not command_line:
+            continue
+
+        matches.append(
+            ProcessInfo(
+                pid=pid,
+                command_line=command_line,
+                display=_process_display(pid),
+            )
+        )
+
+    return tuple(matches)
+
+
+def is_process_running(pattern: str) -> bool:
+    return bool(find_matching_processes(pattern))
+
+
+def terminate_process(
+    process: subprocess.Popen[bytes] | subprocess.Popen[str],
+    *,
+    timeout_seconds: float = 5.0,
+) -> None:
+    if process.poll() is not None:
+        return
+
     try:
-        with open(f"/proc/{pid}/environ", "rb") as f:
-            env = f.read().split(b"\0")
-
-        for item in env:
-            if item.startswith(b"DISPLAY="):
-                return item.decode(errors="ignore").split("=", 1)[1]
-
-    except Exception:
-        return None
-
-    return None
-
-
-def _process_cmdline(pid: int) -> str:
-    try:
-        with open(f"/proc/{pid}/cmdline", "rb") as f:
-            return f.read().replace(b"\0", b" ").decode(errors="ignore")
-    except Exception:
-        return ""
-
-
-def _is_protected_process(cmdline: str) -> bool:
-    return any(pattern in cmdline for pattern in PROTECTED_PROCESS_PATTERNS)
+        os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+        process.wait(timeout=timeout_seconds)
+    except subprocess.TimeoutExpired:
+        os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+        process.wait(timeout=timeout_seconds)
+    except ProcessLookupError:
+        pass
 
 
 def close_display_apps(
-    display: str = ":2",
-    patterns: Optional[Iterable[str]] = None,
-    delay_seconds: float = 0.5,
+    display: str,
+    patterns: Iterable[str] = DEFAULT_DISPLAY_APP_PATTERNS,
+    *,
+    delay_seconds: float = 0.0,
 ) -> None:
-    patterns = list(patterns or DEFAULT_DISPLAY_APP_PATTERNS)
-
     for pattern in patterns:
-        result = subprocess.run(
-            ["pgrep", "-f", pattern],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True,
-            check=False,
-        )
-
-        for pid_text in result.stdout.splitlines():
-            if not pid_text.strip().isdigit():
+        for process in find_matching_processes(pattern):
+            if _is_protected_process(process.command_line):
                 continue
-
-            pid = int(pid_text.strip())
-            cmdline = _process_cmdline(pid)
-
-            if not cmdline:
+            if process.display != display:
                 continue
-
-            if _is_protected_process(cmdline):
-                print(f"[*] Skipping protected process {pid}: {cmdline}")
-                continue
-
-            proc_display = _process_display(pid)
-
-            if proc_display != display:
-                print(
-                    f"[*] Skipping pid {pid}; DISPLAY={proc_display}, "
-                    f"wanted {display}: {cmdline}"
-                )
-                continue
-
-            print(f"[*] Closing pid {pid} on DISPLAY={display}: {cmdline}")
 
             try:
-                os.kill(pid, signal.SIGTERM)
+                os.kill(process.pid, signal.SIGTERM)
             except ProcessLookupError:
                 pass
 
     if delay_seconds > 0:
         time.sleep(delay_seconds)
 
-def is_process_running(pattern: str) -> bool:
-    result = subprocess.run(
-        ["pgrep", "-f", pattern],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=False,
-    )
-
-    return result.returncode == 0
-
 
 def close_matching_display_apps(
     display: str,
     patterns: Iterable[str],
+    *,
     delay_seconds: float = 0.0,
 ) -> None:
     close_display_apps(
@@ -122,10 +120,34 @@ def close_matching_display_apps(
         delay_seconds=delay_seconds,
     )
 
-def kill_process_pattern(pattern: str) -> None:
-    subprocess.run(
-        ["pkill", "-f", pattern],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=False,
+
+def _process_display(pid: int) -> str | None:
+    try:
+        data = Path(f"/proc/{pid}/environ").read_bytes()
+    except (OSError, PermissionError):
+        return None
+
+    for item in data.split(b"\0"):
+        if item.startswith(b"DISPLAY="):
+            return item.decode(errors="ignore").split("=", 1)[1]
+
+    return None
+
+
+def _process_command_line(pid: int) -> str:
+    try:
+        return (
+            Path(f"/proc/{pid}/cmdline")
+            .read_bytes()
+            .replace(b"\0", b" ")
+            .decode(errors="ignore")
+        )
+    except (OSError, PermissionError):
+        return ""
+
+
+def _is_protected_process(command_line: str) -> bool:
+    return any(
+        pattern in command_line
+        for pattern in PROTECTED_PROCESS_PATTERNS
     )

@@ -38,10 +38,9 @@ On Debian, Ubuntu, or Raspberry Pi OS:
 
 ```bash
 sudo apt install gpsd gpsd-clients python3-gps
+python3 -m pip install gps
 ```
 
-The Python package uses the distribution-provided `gps` bindings from
-`python3-gps`. No PyPI dependency is required for this module.
 
 ## VM USB Setup
 

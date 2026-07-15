@@ -1,0 +1,21 @@
+# LEDDMX Bluetooth adapter configuration
+
+[bluetooth]
+service_uuid = "0000ffe0-0000-1000-8000-00805f9b34fb"
+characteristic_uuid = "0000ffe1-0000-1000-8000-00805f9b34fb"
+
+# Used only to reject an obvious non-lighting device during discovery.
+excluded_service_uuids = [
+    "00001101-0000-1000-8000-00805f9b34fb",
+]
+
+write_with_response = false
+command_delay_seconds = 0.05
+reconnect_delay_seconds = 0.25
+scan_timeout_seconds = 15.0
+candidate_connect_timeout_seconds = 8.0
+
+[discovery]
+excluded_name_fragments = [
+    "konnwei",
+]

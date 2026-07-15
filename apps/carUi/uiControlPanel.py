@@ -9,7 +9,6 @@ from apps.carUi.panels.aircraft_panel_manager import AircraftPanelManager
 from apps.carUi.panels.fm_radio_panel_manager import FMRadioPanelManager
 from apps.carUi.panels.lighting_panel_manager import LightingPanelManager
 from apps.carUi.panels.scanner_panel_manager import ScannerPanelManager
-from apps.carUi.panels.settings_panel_manager import SettingsPanelManager
 from apps.carUi.panels.spotify_panel_manager import SpotifyPanelManager
 from apps.carUi.panels.weather_panel_manager import WeatherPanelManager
 from apps.carUi.navigation import (
@@ -26,23 +25,26 @@ from apps.carUi.system import (
     VehicleStatusManager,
     VolumeManager,
 )
-from apps.carUi.panels import StatusBarPanel, TopBarPanel
-from apps.common.uiTheme import (
+from apps.carUi.panels.status_bar_panel import StatusBarPanel
+from apps.carUi.panels.top_bar_panel import TopBarPanel
+from apps.common.uiTheme.uiTheme import (
     CAR_UI_THEME,
     STATUS_BAR_THEME,
     TOP_BAR_THEME,
 )
-from controllers.audio.pipewire_audio_controller import PipewireAudioController
-from hardware_io.gps.gps_reader import GPSReader
-from controllers.lighting.leddmx_bluetooth_controller import LedDmxBluetoothController
-from apps.carUi.radio.radio_status_formatter import format_frequency
+from controllers.audio.audio_controller_if import AudioControllerIf
+from hardware_io.gps.gps_reader import GpsReader
+from controllers.spotify.spotify_web_api_controller import SpotifyWebApiController
+from controllers.lighting.lighting_controller_if import LightingControllerIf
 
 class UiControlPanel(tk.Tk):
     def __init__(
         self,
         runtime: CarUiRuntime,
-        gps_device: GPSReader,
-        lighting_controller: LedDmxBluetoothController,
+        gps_device: GpsReader,
+        lighting_controller: LightingControllerIf,
+        audio_controller: AudioControllerIf,
+        spotify_controller: SpotifyWebApiController,
         callbacks: Optional[Dict[str, Callable[[str], None]]] = None,
         title: str = "Ui Control Panel",
     ) -> None:
@@ -51,6 +53,8 @@ class UiControlPanel(tk.Tk):
         self.runtime = runtime
         self.gps_device = gps_device
         self.lighting_controller = lighting_controller
+        self.audio_controller = audio_controller
+        self.spotify_controller = spotify_controller
         self.remote_display = runtime.remote_display
         self.callbacks: Dict[str, Callable[[str], None]] = callbacks or {}
 
@@ -76,13 +80,10 @@ class UiControlPanel(tk.Tk):
 
         self.content_frame: Optional[tk.Frame] = None
 
-        audio_controller = PipewireAudioController(steps=self.layout["volume_steps"])
-        
         self.system_controller = SystemController(
-            audio_controller=audio_controller,
             remote_display=self.remote_display,
         )
-        self.volume_level = self.system_controller.get_volume_level()
+        self.volume_level = self._initial_volume_level()
 
         self._build_ui()
 
@@ -94,7 +95,7 @@ class UiControlPanel(tk.Tk):
 
         self.gps_ui_monitor = GPSUIMonitor(
             root=self,
-            get_gps_device=lambda: self.gps_device,
+            gps_reader=self.gps_device,
             set_position=self.vehicle_status_manager.set_location,
             set_status=self.status_bar.set_status,
         )
@@ -117,12 +118,15 @@ class UiControlPanel(tk.Tk):
         self.fm_radio_panel_manager = FMRadioPanelManager(self)
         self.scanner_panel_manager = ScannerPanelManager(self)
         self.weather_panel_manager = WeatherPanelManager(self)
-        self.settings_panel_manager = SettingsPanelManager(self)
+        # self.settings_panel_manager = SettingsPanelManager(self)
         self.lighting_panel_manager = LightingPanelManager(self)
-        self.spotify_panel_manager = SpotifyPanelManager(self)
+        self.spotify_panel_manager = SpotifyPanelManager(
+            self,
+            spotify_controller=self.spotify_controller,
+        )
 
         self.volume_manager = VolumeManager(
-            audio_controller=audio_controller,
+            audio_controller=self.audio_controller,
             set_volume_level=self.top_bar.set_volume_level,
             set_status=self.status_bar.set_status,
         )
@@ -159,7 +163,6 @@ class UiControlPanel(tk.Tk):
                 "fm_radio": self.fm_radio_panel_manager.show,
                 "scanner_radio": self.scanner_panel_manager.show,
                 "spotify": self.spotify_panel_manager.show,
-                "settings": self.settings_panel_manager.show,
             }
         )
 
@@ -191,6 +194,13 @@ class UiControlPanel(tk.Tk):
             )
         except Exception:
             return False
+
+    def _initial_volume_level(self) -> int:
+        try:
+            return self.audio_controller.get_volume_level()
+        except Exception as exc:
+            print(f"[UI] Unable to read initial volume: {exc}")
+            return 0
 
     def _build_ui(self) -> None:
         print(f"[UI] Loaded UiControlPanel from: {__file__}")
@@ -370,23 +380,19 @@ class UiControlPanel(tk.Tk):
             manager.power_off()
 
     def _handle_settings(self) -> None:
-        router = getattr(self, "panel_router", None)
-        if router is not None:
-            router.open("settings")
+        if self.panel_router.contains("settings"):
+            self.panel_router.open("settings")
+            return
+
+        self.status_bar.set_status("Settings panel is not available")
 
     def _close_window(self) -> None:
+        self.gps_ui_monitor.stop()
         self.quit()
         self.destroy()
 
-    def start_gps_ui_updates(self, interval_ms: int | None = None) -> None:
-        self.gps_ui_monitor.start(
-            interval_ms
-            if interval_ms is not None
-            else self.layout["gps_poll_interval_ms"]
-        )
+    def start_gps_ui_updates(self) -> None:
+        self.gps_ui_monitor.start()
 
     def stop_gps_ui_updates(self) -> None:
         self.gps_ui_monitor.stop()
-
-    def set_panel_title(self, title: str) -> None:
-        self.top_bar.set_title(title)

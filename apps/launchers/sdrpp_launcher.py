@@ -1,89 +1,159 @@
+from __future__ import annotations
+
 import os
 import shutil
-import signal
 import socket
 import subprocess
 import time
 from dataclasses import dataclass
-from typing import Callable, Optional
+from pathlib import Path
 
-from apps.launchers.app_launcher_if import AppLauncherIf
+from apps.launchers.app_launcher_if import (
+    AppLauncherIf,
+    StatusCallback,
+)
 from apps.launchers.process_manager import (
     close_matching_display_apps,
     is_process_running,
+    terminate_process,
 )
+from common.logging.logging_paths import logging_file_path
 
-@dataclass(frozen=True)
+
+@dataclass(frozen=True, slots=True)
 class SDRPPProfile:
     name: str
     mode: str
     step_hz: int
-    start_frequency_hz: Optional[int] = None
+    start_frequency_hz: int | None = None
 
-
-FM_BROADCAST_PROFILE = SDRPPProfile(
-    name="FM Broadcast",
-    mode="WFM",
-    step_hz=200_000,
-    start_frequency_hz=88_100_000,
-)
-
-AIRBAND_AM_PROFILE = SDRPPProfile(
-    name="Airband AM",
-    mode="AM",
-    step_hz=25_000,
-    start_frequency_hz=125_000_000,
-)
-
-WEATHER_NOAA_PROFILE = SDRPPProfile(
-    name="NOAA Weather Radio",
-    mode="NFM",
-    step_hz=25_000,
-    start_frequency_hz=162_550_000,
-)
-
-HAM_RADIO_PROFILE = SDRPPProfile(
-    name="Ham Radio",
-    mode="NFM",
-    step_hz=1_000,
-    start_frequency_hz=450_000_000,
-)
-
-from common.logging.logging_paths import logging_file_path
 
 class SDRPPLauncher(AppLauncherIf):
+    """Launch SDR++ and wait for its RigCTL server."""
+
     def __init__(
         self,
-        profile: SDRPPProfile = FM_BROADCAST_PROFILE,
-        log_file: Optional[str] = None,
+        *,
+        profile: SDRPPProfile,
+        log_file: str | Path | None = None,
         fullscreen: bool = True,
         resource_manager=None,
         owner_name: str = "sdrpp",
         rigctl_host: str = "127.0.0.1",
         rigctl_port: int = 4532,
-        rigctl_timeout_sec: float = 15.0,
-    ):
+        rigctl_timeout_seconds: float = 15.0,
+    ) -> None:
         self.profile = profile
-        self.log_file = (
+        self.log_file = Path(
             log_file
             or logging_file_path(
-                "carsdr",
-                "carsdr-sdrpp.log",
+                "drive-ubiquitos",
+                "sdrpp.log",
             )
         )
         self.fullscreen = fullscreen
-        self._process: Optional[subprocess.Popen] = None
         self.resource_manager = resource_manager
         self.owner_name = owner_name
         self.rigctl_host = rigctl_host
         self.rigctl_port = rigctl_port
-        self.rigctl_timeout_sec = rigctl_timeout_sec
+        self.rigctl_timeout_seconds = rigctl_timeout_seconds
+        self._process: subprocess.Popen[str] | None = None
 
     def is_running(self) -> bool:
-        if self._process is not None and self._process.poll() is None:
-            return True
+        if self._process is not None:
+            if self._process.poll() is None:
+                return True
+            self._process = None
 
-        return is_process_running("sdrpp") or is_process_running("sdr\\+\\+")
+        return (
+            is_process_running("sdrpp")
+            or is_process_running("sdr\\+\\+")
+        )
+
+    def launch(
+        self,
+        remote_display: str,
+        set_status: StatusCallback = None,
+    ) -> None:
+        if self.resource_manager is not None:
+            self.resource_manager.acquire(
+                self.owner_name,
+                force=True,
+                set_status=set_status,
+            )
+
+        subprocess.run(
+            ["sudo", "systemctl", "stop", "readsb"],
+            check=False,
+        )
+
+        if self.is_running():
+            if self.is_rigctl_ready():
+                _status(
+                    set_status,
+                    f"SDR++ already ready: {self.profile.name}",
+                )
+                return
+
+            _status(set_status, "Waiting for existing SDR++ RigCTL...")
+            self.wait_for_rigctl()
+            return
+
+        executable = shutil.which("sdrpp") or shutil.which("sdr++")
+        if executable is None:
+            raise RuntimeError("Could not find sdrpp or sdr++ in PATH")
+
+        environment = _sdrpp_environment(remote_display)
+        self.log_file.parent.mkdir(parents=True, exist_ok=True)
+        log_handle = self.log_file.open("a", encoding="utf-8")
+        try:
+            self._process = subprocess.Popen(
+                [executable, "--autostart"],
+                env=environment,
+                stdout=log_handle,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+                text=True,
+            )
+        finally:
+            log_handle.close()
+
+        if self.fullscreen:
+            self._request_fullscreen(remote_display, environment)
+
+        _status(set_status, "SDR++ launched; waiting for RigCTL...")
+        self.wait_for_rigctl()
+        _status(
+            set_status,
+            f"SDR++ ready: {self.profile.name}",
+        )
+
+    def stop(
+        self,
+        remote_display: str,
+        set_status: StatusCallback = None,
+    ) -> None:
+        if self._process is not None:
+            terminate_process(self._process)
+            self._process = None
+
+        close_matching_display_apps(
+            display=remote_display,
+            patterns=("sdrpp", "sdr\\+\\+"),
+        )
+        _status(set_status, "SDR++ stopped")
+
+    def toggle(
+        self,
+        remote_display: str,
+        set_status: StatusCallback = None,
+    ) -> bool:
+        if self.is_running():
+            self.stop(remote_display, set_status)
+            return False
+
+        self.launch(remote_display, set_status)
+        return True
 
     def is_rigctl_ready(self) -> bool:
         try:
@@ -95,17 +165,17 @@ class SDRPPLauncher(AppLauncherIf):
         except OSError:
             return False
 
-    def wait_for_rigctl(
-        self,
-        set_status: Optional[Callable[[str], None]] = None,
-    ) -> None:
-        deadline = time.time() + self.rigctl_timeout_sec
-        last_error: Optional[BaseException] = None
+    def wait_for_rigctl(self) -> None:
+        deadline = time.monotonic() + self.rigctl_timeout_seconds
+        last_error: OSError | None = None
 
-        while time.time() < deadline:
-            if self._process is not None and self._process.poll() is not None:
+        while time.monotonic() < deadline:
+            if (
+                self._process is not None
+                and self._process.poll() is not None
+            ):
                 raise RuntimeError(
-                    f"SDR++ exited before rigctl became ready. "
+                    "SDR++ exited before RigCTL became ready. "
                     f"Check log: {self.log_file}"
                 )
 
@@ -120,143 +190,45 @@ class SDRPPLauncher(AppLauncherIf):
                 time.sleep(0.5)
 
         raise RuntimeError(
-            f"rigctl not ready after SDR++ launch: {last_error}. "
-            f"Expected {self.rigctl_host}:{self.rigctl_port}. "
-            f"Check SDR++ Rigctl Server module and log: {self.log_file}"
+            "RigCTL did not become ready at "
+            f"{self.rigctl_host}:{self.rigctl_port}: {last_error}"
         )
 
-    def launch(
+    def _request_fullscreen(
         self,
-        remote_display: str = ":2",
-        set_status: Optional[Callable[[str], None]] = None,
+        display: str,
+        environment: dict[str, str],
     ) -> None:
-        if self.resource_manager:
-            self.resource_manager.acquire(
-                self.owner_name,
-                force=True,
-                set_status=set_status,
-            )
-
-        subprocess.run(["sudo", "systemctl", "stop", "readsb"], check=False)
-
-        if self._process is not None and self._process.poll() is not None:
-            self._process = None
-            
-        if self.is_running():
-            if self.is_rigctl_ready():
-                if set_status:
-                    set_status(f"SDR++ already running and rigctl ready: {self.profile.name}")
-                return
-
-            if set_status:
-                set_status("SDR++ already running, waiting for rigctl...")
-
-            try:
-                self.wait_for_rigctl(set_status=set_status)
-            except Exception as exc:
-                if set_status:
-                    set_status(f"SDR++ launched, rigctl not ready yet: {exc}")
-            return
-
-        sdrpp_path = shutil.which("sdrpp") or shutil.which("sdr++")
-        if not sdrpp_path:
-            raise RuntimeError("Could not find sdrpp or sdr++ in PATH")
-
-        env = os.environ.copy()
-        env["DISPLAY"] = remote_display
-        env["XDG_SESSION_TYPE"] = "x11"
-        env["GDK_BACKEND"] = "x11"
-        env["LIBGL_ALWAYS_SOFTWARE"] = "1"
-
-        if set_status:
-            set_status(f"Launching SDR++ on {remote_display}...")
-
-        with open(self.log_file, "a", encoding="utf-8") as log:
-            log.write("\n\n========== Launching SDR++ ==========\n")
-            log.write(f"display={remote_display}\n")
-            log.write(f"profile={self.profile.name}\n")
-            log.flush()
-
-            self._process = subprocess.Popen(
-                [sdrpp_path, "--autostart"],
-                env=env,
-                stdout=log,
-                stderr=subprocess.STDOUT,
-                start_new_session=True,
-            )
-
-        if self.fullscreen:
-            subprocess.Popen(
-                [
-                    "bash",
-                    "-lc",
-                    (
-                        f'sleep 3; '
-                        f'DISPLAY="{remote_display}" '
-                        'wmctrl -r "SDR++" -b add,fullscreen'
-                    ),
-                ],
-                env=env,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
-            )
-
-        if set_status:
-            set_status("SDR++ launched. Waiting for rigctl...")
-
-        try:
-            self.wait_for_rigctl(set_status=set_status)
-        except Exception as exc:
-            if set_status:
-                set_status(f"SDR++ launched, rigctl not ready yet: {exc}")
-
-        if set_status:
-            set_status(
-                f"SDR++ ready on {remote_display}: {self.profile.name}. "
-                f"mode={self.profile.mode}, step={self.profile.step_hz} Hz."
-            )
-
-    def stop(
-        self,
-        remote_display: str = ":2",
-        set_status: Optional[Callable[[str], None]] = None,
-    ) -> None:
-        if self._process is not None and self._process.poll() is None:
-            try:
-                os.killpg(os.getpgid(self._process.pid), signal.SIGTERM)
-                self._process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                os.killpg(os.getpgid(self._process.pid), signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-
-        close_matching_display_apps(
-            display=remote_display,
-            patterns=[
-                "sdrpp",
-                "sdr\\+\\+",
+        subprocess.Popen(
+            [
+                "bash",
+                "-lc",
+                (
+                    f'sleep 3; DISPLAY="{display}" '
+                    'wmctrl -r "SDR++" -b add,fullscreen'
+                ),
             ],
+            env=environment,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            text=True,
         )
 
-        self._process = None
 
-        time.sleep(0.25)
+def _sdrpp_environment(display: str) -> dict[str, str]:
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "DISPLAY": display,
+            "XDG_SESSION_TYPE": "x11",
+            "GDK_BACKEND": "x11",
+            "LIBGL_ALWAYS_SOFTWARE": "1",
+        }
+    )
+    return environment
 
-        if set_status:
-            set_status("SDR++ stopped")
 
-    def toggle(
-        self,
-        remote_display: str = ":2",
-        set_status: Optional[Callable[[str], None]] = None,
-    ) -> bool:
-        if self.is_running():
-            self.stop(
-                remote_display=remote_display,
-                set_status=set_status,
-            )
-            return False
-
-        self.launch(remote_display=remote_display, set_status=set_status)
-        return True
+def _status(callback: StatusCallback, message: str) -> None:
+    if callback is not None:
+        callback(message)

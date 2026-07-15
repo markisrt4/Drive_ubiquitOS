@@ -1,34 +1,32 @@
-from abc import ABC, abstractmethod
-from typing import Callable, Optional
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import Protocol, TypeAlias, runtime_checkable
 
 
-StatusCallback = Optional[Callable[[str], None]]
+StatusCallback: TypeAlias = Callable[[str], None] | None
 
 
-class AppLauncherIf(ABC):
-    @abstractmethod
+@runtime_checkable
+class AppLauncherIf(Protocol):
+    """Thread-compatible interface for launching external applications."""
+
     def launch(
         self,
-        remote_display: str = ":2",
+        remote_display: str,
         set_status: StatusCallback = None,
-    ) -> None:
-        pass
+    ) -> None: ...
 
-    @abstractmethod
     def stop(
         self,
+        remote_display: str,
         set_status: StatusCallback = None,
-    ) -> None:
-        pass
+    ) -> None: ...
 
-    @abstractmethod
     def toggle(
         self,
-        remote_display: str = ":2",
+        remote_display: str,
         set_status: StatusCallback = None,
-    ) -> bool:
-        pass
+    ) -> bool: ...
 
-    @abstractmethod
-    def is_running(self) -> bool:
-        pass
+    def is_running(self) -> bool: ...

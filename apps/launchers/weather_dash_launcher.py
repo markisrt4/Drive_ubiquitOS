@@ -1,36 +1,46 @@
-from pathlib import Path
-from typing import Callable, Optional
+from __future__ import annotations
 
+from pathlib import Path
+
+from apps.launchers.app_launcher_if import StatusCallback
 from apps.launchers.streamlit_launcher import StreamlitLauncher
+from common.logging.logging_paths import logging_file_path
 
 
 class WeatherDashLauncher(StreamlitLauncher):
+    """Launch the standalone weather dashboard application."""
+
     def __init__(
         self,
-        project_root: Optional[Path] = None,
+        *,
+        project_root: str | Path | None = None,
         port: int = 8501,
-    ):
-        if project_root is None:
-            project_root = Path(__file__).resolve().parents[2]
-
-        app_path = project_root / "apps" / "carUi" / "weather_dash.py"
+    ) -> None:
+        root = (
+            Path(project_root).expanduser().resolve()
+            if project_root is not None
+            else Path(__file__).resolve().parents[2]
+        )
 
         super().__init__(
-            app_path=app_path,
+            app_path=root / "apps" / "weatherDash" / "main.py",
             port=port,
-            log_file="/tmp/carsdr-weather.log",
-            browser_log_file="/tmp/carsdr-weather-browser.log",
+            log_file=logging_file_path(
+                "drive-ubiquitos",
+                "weather-dashboard.log",
+            ),
+            browser_log_file=logging_file_path(
+                "drive-ubiquitos",
+                "weather-dashboard-browser.log",
+            ),
         )
 
     def launch(
         self,
-        remote_display: str = ":2",
-        set_status: Optional[Callable[[str], None]] = None,
+        remote_display: str,
+        set_status: StatusCallback = None,
     ) -> None:
-        if set_status:
+        if set_status is not None:
             set_status("Launching weather dashboard...")
 
-        super().launch(
-            remote_display=remote_display,
-            set_status=set_status,
-        )
+        super().launch(remote_display, set_status)

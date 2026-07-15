@@ -1,13 +1,5 @@
-"""LEDDMX lighting controller implementation.
+"""LEDDMX packet construction."""
 
-Protocol support for LEDDMX-00 / LEDDMX-03 style controllers.
-Transport-specific adapters live here too, starting with BLE.
-"""
+from protocols.leddmx.leddmx_protocol import LedDmxProtocol
 
-from .bluetooth_controller import LedDmxBluetoothController
-from .protocol import LedDmxProtocol
-
-__all__ = [
-    "LedDmxBluetoothController",
-    "LedDmxProtocol",
-]
+__all__ = ["LedDmxProtocol"]

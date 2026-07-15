@@ -5,12 +5,18 @@ from typing import Optional
 from apps.carUi.panels.aircraft_panel import AircraftPanel
 from apps.carUi.panels.panel_manager_if import PanelManagerIf
 from apps.carUi.radio.radio_panel import RadioPanel
-from apps.carUi.radio.radio_panel_config import RadioPanelConfig, RadioPanelTileConfig
+from apps.carUi.radio.radio_panel_config import (
+    RadioPanelConfig,
+    RadioPanelTileConfig,
+)
 from apps.carUi.radio.radio_panel_factory import create_radio_panel_binding
 from apps.carUi.radio.radio_session_controller import RadioSessionController
+from apps.common.uiTheme import AIRCRAFT_PANEL_THEME
 
 
 class AircraftPanelManager(PanelManagerIf):
+    """Coordinate the Aircraft menu, ADS-B launcher, and Airband radio."""
+
     def __init__(self, app) -> None:
         super().__init__(app)
         self.airband_panel: Optional[RadioPanel] = None
@@ -21,13 +27,16 @@ class AircraftPanelManager(PanelManagerIf):
             return
 
         self.app.top_bar.set_back_command(self.app.show_main_menu)
+
         panel = AircraftPanel(
             parent=self.content_frame,
             on_adsb_pressed=self.launch_adsb,
             on_airband_pressed=self.show_airband_am,
             create_tile=self.create_tile,
+            theme=AIRCRAFT_PANEL_THEME,
         )
         panel.pack(fill="both", expand=True)
+
         self.set_status("Aircraft menu ready")
 
     def launch_adsb(self) -> None:
@@ -92,4 +101,5 @@ class AircraftPanelManager(PanelManagerIf):
         self.airband_panel.pack(fill="both", expand=True)
         self.airband_panel.start()
         self.airband_session.report_ready()
-        self.app.set_panel_title("Airband AM Radio")
+
+        self.app.top_bar.set_title("Airband AM Radio")
