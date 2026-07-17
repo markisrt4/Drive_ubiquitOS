@@ -262,9 +262,8 @@ python3 -m apps.carUi.main
 ```
 
 For per-application X11 forwarding, connect to the host with `ssh -X` or
-`ssh -Y`. SSH assigns and exports `DISPLAY`; CarUI preserves that value. The
-VNC display configured by `remote_display` is separate and is not used for the
-CarUI window. From a workstation with an X server, launch it with:
+`ssh -Y`. SSH assigns and exports `DISPLAY`; CarUI preserves that value. 
+From a workstation with an X server, launch it with:
 
 ```bash
 ssh -X username@your-openroad-host

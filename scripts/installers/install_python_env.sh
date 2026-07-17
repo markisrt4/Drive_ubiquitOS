@@ -21,13 +21,24 @@ else
 fi
 
 echo "[*] Creating Python virtual environment..."
-python3 -m venv "$VENV_DIR"
+python3 -m venv --system-site-packages "$VENV_DIR"
 
 echo "[*] Installing Python packages..."
 # shellcheck disable=SC1091
 source "$VENV_DIR/bin/activate"
 
 python -m pip install --upgrade pip wheel setuptools
+
+if [[ " ${FEATURES[*]} " == *" base "* || " ${FEATURES[*]} " == *" gps "* ]]; then
+  gps_location="$(
+    python -m pip show gps 2>/dev/null \
+      | awk -F': ' '$1 == "Location" { print $2; exit }'
+  )"
+  if [[ -n "$gps_location" && "$gps_location" == "$VIRTUAL_ENV"/* ]]; then
+    echo "[*] Removing incompatible PyPI gps package; using python3-gps instead..."
+    python -m pip uninstall -y gps
+  fi
+fi
 
 python_packages=()
 for feature in "${FEATURES[@]}"; do

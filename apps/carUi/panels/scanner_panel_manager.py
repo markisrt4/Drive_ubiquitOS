@@ -114,7 +114,7 @@ class ScannerPanelManager(PanelManagerIf):
         self.active_radio_panel.pack(fill="both", expand=True)
         self.active_radio_panel.start()
         self.active_radio_session.report_ready()
-        self.app.set_panel_title(band.title)
+        self.set_title(band.title)
 
     def _find_band(self, key: str) -> ScannerBandSpec | None:
         for band in self.bands:

@@ -69,7 +69,6 @@ get_feature_python_packages() {
         requests \
         geocoder \
         streamlit-autorefresh \
-        gps \
         gpsd-py3 \
         pyserial \
         bleak \
@@ -85,7 +84,6 @@ get_feature_python_packages() {
     gps)
       printf '%s
 ' \
-        gps \
         gpsd-py3
       ;;
     radio)

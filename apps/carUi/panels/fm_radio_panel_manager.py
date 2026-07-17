@@ -55,4 +55,4 @@ class FMRadioPanelManager(PanelManagerIf):
         self.fm_panel.pack(fill="both", expand=True)
         self.fm_panel.start()
         self.fm_session.report_ready()
-        self.app.set_panel_title("FM Broadcast Radio")
+        self.set_title("FM Broadcast Radio")
