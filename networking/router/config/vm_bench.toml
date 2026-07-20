@@ -1,0 +1,35 @@
+[router]
+name = "openroad-bench-router"
+profile = "vm-bench"
+
+[wan]
+connection_type = "ethernet"
+interface = "ens33"
+
+[lan_wifi]
+enabled = true
+interface = "wlx7419f81758ca"
+driver = "mt7921u"
+usb_id = "0e8d:7961"
+
+ssid = "OpenRoadCode-Bench"
+country = "US"
+band = "5ghz"
+channel = 0
+
+address = "192.168.8.1/24"
+security = "wpa2"
+password_file = "/etc/openroadcode/router/wifi-password"
+
+[lan_ethernet]
+enabled = false
+interface = ""
+
+[dns]
+mode = "automatic"
+servers = []
+
+[vpn]
+enabled = false
+interface = "wg0"
+kill_switch = false
