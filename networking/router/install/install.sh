@@ -121,8 +121,8 @@ validate_settings() {
 install_packages() {
     log "Installing NetworkManager and Wi-Fi utilities..."
     export DEBIAN_FRONTEND=noninteractive
-    apt-get update
-    apt-get install -y network-manager iw rfkill
+    #apt-get update
+    #apt-get install -y network-manager iw rfkill
 
     systemctl enable --now NetworkManager
 
@@ -144,9 +144,15 @@ detect_wifi_iface() {
         return
     fi
 
-    WIFI_IFACE="$(find /sys/class/net -mindepth 1 -maxdepth 1 -type l \
-        -exec sh -c 'for p; do [[ -d "$p/wireless" ]] && basename "$p"; done' sh {} + \
-        | head -n 1)"
+    WIFI_IFACE=$(
+    	for p in /sys/class/net/*; do
+            [ -d "$p/wireless" ] && {
+            printf '%s\n' "${p##*/}"
+            break
+        }
+
+    	done
+	)
 
     [[ -n "$WIFI_IFACE" ]] || fatal "No wireless interface was found."
 }
