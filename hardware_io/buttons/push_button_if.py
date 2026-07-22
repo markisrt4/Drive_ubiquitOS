@@ -1,17 +1,29 @@
+"""Pushbutton hardware interface."""
+
 from abc import ABC, abstractmethod
 
-from hardware_io.buttons.push_button_types import PushButtonState
+from hardware_io.buttons.push_button_callback_if import PushButtonCallbackIf
+from hardware_io.buttons.push_button_state import PushButtonState
 
 
 class PushButtonIf(ABC):
+    """Interface for a physical pushbutton."""
+
     @abstractmethod
     def start(self) -> None:
-        """Begin monitoring the button."""
+        """Begin monitoring the pushbutton."""
 
     @abstractmethod
     def stop(self) -> None:
-        """Stop monitoring the button."""
+        """Stop monitoring the pushbutton."""
 
     @abstractmethod
     def get_state(self) -> PushButtonState:
-        """Return the current button state."""
+        """Return the current pushbutton state."""
+
+    @abstractmethod
+    def set_callback(
+        self,
+        callback: PushButtonCallbackIf | None,
+    ) -> None:
+        """Set or clear the callback object."""
